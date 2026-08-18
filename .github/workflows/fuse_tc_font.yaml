@@ -1,0 +1,279 @@
+name: 生成簡轉繁字型
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: fuse-tc-font
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: SpaceTimee/Fusion-JetBrainsMapleMono
+  THIS_REPO: bgtsai/TC-JetBrainsMapleMono
+
+jobs:
+  # ── 決定這次要處理哪個版本（release 線）：優先接續上次沒做完的，沒有才看新版 ──
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.chk.outputs.updated }}
+      target: ${{ steps.chk.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: chk
+        run: |
+          IN_PROGRESS=$(cat .state/in_progress_release.txt 2>/dev/null || echo "")
+          if [ -n "$IN_PROGRESS" ]; then
+            echo "接續處理上次未完成的版本：$IN_PROGRESS"
+            echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            LATEST=$(curl -s "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest" | jq -r .tag_name)
+            RECORDED=$(cat .state/last_release.txt 2>/dev/null || echo "")
+            if [ "$LATEST" != "$RECORDED" ]; then
+              echo "偵測到新版本：$LATEST（上次記錄：$RECORDED），鎖定處理"
+              mkdir -p .state
+              echo "$LATEST" > .state/in_progress_release.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add .state/in_progress_release.txt
+              git commit -m "鎖定處理版本：$LATEST"
+              git push
+              echo "target=$LATEST" >> "$GITHUB_OUTPUT"
+              echo "updated=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "無新版本"
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  # ── 同上邏輯，commit 線 ──
+  check-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.chk.outputs.updated }}
+      target: ${{ steps.chk.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: chk
+        run: |
+          IN_PROGRESS=$(cat .state/in_progress_commit.txt 2>/dev/null || echo "")
+          if [ -n "$IN_PROGRESS" ]; then
+            echo "接續處理上次未完成的 commit：$IN_PROGRESS"
+            echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            LATEST=$(git ls-remote "https://github.com/${UPSTREAM_REPO}.git" HEAD | cut -c1-7)
+            RECORDED=$(cat .state/last_commit.txt 2>/dev/null || echo "")
+            if [ "$LATEST" != "$RECORDED" ]; then
+              echo "偵測到新 commit：$LATEST（上次記錄：$RECORDED），鎖定處理"
+              mkdir -p .state
+              echo "$LATEST" > .state/in_progress_commit.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add .state/in_progress_commit.txt
+              git commit -m "鎖定處理 commit：$LATEST"
+              git push
+              echo "target=$LATEST" >> "$GITHUB_OUTPUT"
+              echo "updated=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "無新 commit"
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+  # ── release 線：16 組合並行，各自檢查暫存 tag 是否已完成、跳過已做過的 ──
+  convert-release:
+    needs: check-release
+    if: needs.check-release.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: [NF-NR-NL-HT, NF-NR-NL-XX, NF-NR-XX-HT, NF-NR-XX-XX, NF-XX-NL-HT, NF-XX-NL-XX, NF-XX-XX-HT, NF-XX-XX-XX, XX-NR-NL-HT, XX-NR-NL-XX, XX-NR-XX-HT, XX-NR-XX-XX, XX-XX-NL-HT, XX-XX-NL-XX, XX-XX-XX-HT, XX-XX-XX-XX]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
+      ASSET_NAME: TC-JetBrainsMapleMono-${{ matrix.combo }}.zip
+    steps:
+      - uses: actions/checkout@v4
+      - name: 檢查這個組合是否已經處理過（斷點續傳）
+        id: skip_check
+        run: |
+          EXISTS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq ".assets[].name" 2>/dev/null | grep -x "$ASSET_NAME" || true)
+          if [ -n "$EXISTS" ]; then
+            echo "此組合已存在於暫存版本，跳過"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 下載上游字型組合
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          curl -sL "https://github.com/${UPSTREAM_REPO}/releases/download/${{ needs.check-release.outputs.target }}/JetBrainsMapleMono-${{ matrix.combo }}.zip" -o source.zip
+          mkdir -p source_fonts
+          unzip -q source.zip -d source_fonts
+      - name: 逐字重執行簡轉繁（兩階段）
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          chmod +x converter/otfcc/otfccdump2 converter/otfcc/otfccbuild2
+          mkdir -p output_fonts
+          for f in source_fonts/*.ttf; do
+            base=$(basename "$f" .ttf)
+            stage1="output_fonts/${base}_stage1.ttf"
+            final="output_fonts/TC-${base}.ttf"
+            python3 converter/converto.py -i "$f" -o "$stage1" -wk 0031 -v \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+            python3 converter/converto.py -i "$stage1" -o "$final" -wk 11 \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+            rm -f "$stage1"
+          done
+      - name: 打包並上傳到暫存版本
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
+          gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+            --title "暫存：${{ needs.check-release.outputs.target }}" \
+            --notes "自動化暫存版本，處理完成後會搬移到 latest，不用手動理會" \
+            --prerelease 2>/dev/null || true
+          gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber
+
+  # ── release 線：16 個組合齊全後，搬移到正式 latest tag ──
+  finalize-release:
+    needs: [check-release, convert-release]
+    if: always() && needs.check-release.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 檢查是否 16 個組合都已齊全
+        id: count
+        run: |
+          N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+          echo "目前暫存版本已有 $N / 16 個組合"
+          echo "n=$N" >> "$GITHUB_OUTPUT"
+      - name: 齊全，搬移到正式 latest 並更新狀態
+        if: steps.count.outputs.n == '16'
+        run: |
+          mkdir -p dist
+          gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber
+          gh release create latest --repo "$THIS_REPO" \
+            --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
+            --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
+            2>/dev/null || true
+          gh release upload latest dist/*.zip --repo "$THIS_REPO" --clobber
+          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+          mkdir -p .state
+          echo "${{ needs.check-release.outputs.target }}" > .state/last_release.txt
+          rm -f .state/in_progress_release.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .state/last_release.txt
+          git rm -q -f --ignore-unmatch .state/in_progress_release.txt
+          git commit -m "完成版本：${{ needs.check-release.outputs.target }}，發布至 latest"
+          git push
+      - name: 尚未齊全，本次不搬移
+        if: steps.count.outputs.n != '16'
+        run: echo "本次還有組合未完成，狀態保留，下次排程會自動只重跑缺少的部分"
+
+  # ── commit 線：邏輯與 release 線相同 ──
+  convert-commit:
+    needs: check-commit
+    if: needs.check-commit.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: [NF-NR-NL-HT, NF-NR-NL-XX, NF-NR-XX-HT, NF-NR-XX-XX, NF-XX-NL-HT, NF-XX-NL-XX, NF-XX-XX-HT, NF-XX-XX-XX, XX-NR-NL-HT, XX-NR-NL-XX, XX-NR-XX-HT, XX-NR-XX-XX, XX-XX-NL-HT, XX-XX-NL-XX, XX-XX-XX-HT, XX-XX-XX-XX]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
+      ASSET_NAME: TC-JetBrainsMapleMono-${{ matrix.combo }}.zip
+    steps:
+      - uses: actions/checkout@v4
+      - name: 檢查這個組合是否已經處理過（斷點續傳）
+        id: skip_check
+        run: |
+          EXISTS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq ".assets[].name" 2>/dev/null | grep -x "$ASSET_NAME" || true)
+          if [ -n "$EXISTS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 下載上游字型組合（pre）
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          curl -sL "https://github.com/${UPSTREAM_REPO}/releases/download/pre/JetBrainsMapleMono-${{ matrix.combo }}.zip" -o source.zip
+          mkdir -p source_fonts
+          unzip -q source.zip -d source_fonts
+      - name: 逐字重執行簡轉繁（兩階段）
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          chmod +x converter/otfcc/otfccdump2 converter/otfcc/otfccbuild2
+          mkdir -p output_fonts
+          for f in source_fonts/*.ttf; do
+            base=$(basename "$f" .ttf)
+            stage1="output_fonts/${base}_stage1.ttf"
+            final="output_fonts/TC-${base}.ttf"
+            python3 converter/converto.py -i "$f" -o "$stage1" -wk 0031 -v \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+            python3 converter/converto.py -i "$stage1" -o "$final" -wk 11 \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+            rm -f "$stage1"
+          done
+      - name: 打包並上傳到暫存版本
+        if: steps.skip_check.outputs.skip == 'false'
+        run: |
+          cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
+          gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+            --title "暫存（commit）：${{ needs.check-commit.outputs.target }}" \
+            --notes "自動化暫存版本，處理完成後會搬移到 pre，不用手動理會" \
+            --prerelease 2>/dev/null || true
+          gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber
+
+  finalize-commit:
+    needs: [check-commit, convert-commit]
+    if: always() && needs.check-commit.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 檢查是否 16 個組合都已齊全
+        id: count
+        run: |
+          N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+          echo "n=$N" >> "$GITHUB_OUTPUT"
+      - name: 齊全，搬移到正式 pre 並更新狀態
+        if: steps.count.outputs.n == '16'
+        run: |
+          mkdir -p dist
+          gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber
+          gh release create pre --repo "$THIS_REPO" \
+            --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
+            --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
+            --prerelease 2>/dev/null || true
+          gh release upload pre dist/*.zip --repo "$THIS_REPO" --clobber
+          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+          mkdir -p .state
+          echo "${{ needs.check-commit.outputs.target }}" > .state/last_commit.txt
+          rm -f .state/in_progress_commit.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .state/last_commit.txt
+          git rm -q -f --ignore-unmatch .state/in_progress_commit.txt
+          git commit -m "完成 commit：${{ needs.check-commit.outputs.target }}，發布至 pre"
+          git push
+      - name: 尚未齊全，本次不搬移
+        if: steps.count.outputs.n != '16'
+        run: echo "本次還有組合未完成，狀態保留，下次排程會自動只重跑缺少的部分"
