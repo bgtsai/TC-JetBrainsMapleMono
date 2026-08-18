@@ -146,6 +146,7 @@ jobs:
       - name: 打包並上傳到暫存版本
         if: steps.skip_check.outputs.skip == 'false'
         run: |
+          cp OFL.txt output_fonts/OFL.txt
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
           gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
             --title "暫存：${{ needs.check-release.outputs.target }}" \
@@ -245,6 +246,7 @@ jobs:
       - name: 打包並上傳到暫存版本
         if: steps.skip_check.outputs.skip == 'false'
         run: |
+          cp OFL.txt output_fonts/OFL.txt
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
           gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
             --title "暫存（commit）：${{ needs.check-commit.outputs.target }}" \

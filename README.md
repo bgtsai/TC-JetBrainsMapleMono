@@ -37,4 +37,15 @@
 
 ## 授權
 
-轉換後的字型授權隨附其底層字型（JetBrains Mono、Maple Mono）與上游 Fusion-JetBrainsMapleMono 專案的授權條款，請下載時一併留意各字型附帶的 LICENSE 檔案。
+本專案產出的字型是對 [Fusion-JetBrainsMapleMono](https://github.com/SpaceTimee/Fusion-JetBrainsMapleMono) 的再次衍生（簡轉繁處理），授權為 **[SIL Open Font License 1.1](https://openfontlicense.org)**，與底層字型完全一致——OFL 明確規定衍生作品必須沿用同一份授權，不得改用其他授權方式。
+
+完整授權文字見本 repo 的 [OFL.txt](OFL.txt)，著作權聲明依 OFL 慣例逐層疊加：
+
+```
+Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+Copyright 2022 The Maple Mono Project Authors (https://github.com/subframe7536/maple-font)
+Copyright 2025 Space Time (https://github.com/SpaceTimee/Fusion-JetBrainsMapleMono)
+Copyright 2026 bgtsai (https://github.com/bgtsai/TC-JetBrainsMapleMono)
+```
+
+依 OFL 條款，字型（含衍生作品）不得單獨販售，但可以與其他軟體一起授權、嵌入、重新散布，前提是不使用任何被保留的字型名稱（Reserved Font Name）。
