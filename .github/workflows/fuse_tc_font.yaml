@@ -43,7 +43,11 @@ jobs:
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git add .state/in_progress_release.txt
               git commit -m "鎖定處理版本：$LATEST"
-              git push
+              for i in 1 2 3 4 5; do
+                git pull --rebase origin main -q && git push origin main && break
+                echo "推送衝突，重試中（第 $i 次）..."
+                sleep $((RANDOM % 5 + 1))
+              done
               echo "target=$LATEST" >> "$GITHUB_OUTPUT"
               echo "updated=true" >> "$GITHUB_OUTPUT"
             else
@@ -79,7 +83,11 @@ jobs:
               git config user.email "github-actions[bot]@users.noreply.github.com"
               git add .state/in_progress_commit.txt
               git commit -m "鎖定處理 commit：$LATEST"
-              git push
+              for i in 1 2 3 4 5; do
+                git pull --rebase origin main -q && git push origin main && break
+                echo "推送衝突，重試中（第 $i 次）..."
+                sleep $((RANDOM % 5 + 1))
+              done
               echo "target=$LATEST" >> "$GITHUB_OUTPUT"
               echo "updated=true" >> "$GITHUB_OUTPUT"
             else
@@ -180,7 +188,11 @@ jobs:
           git add .state/last_release.txt
           git rm -q -f --ignore-unmatch .state/in_progress_release.txt
           git commit -m "完成版本：${{ needs.check-release.outputs.target }}，發布至 latest"
-          git push
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main -q && git push origin main && break
+            echo "推送衝突，重試中（第 $i 次）..."
+            sleep $((RANDOM % 5 + 1))
+          done
       - name: 尚未齊全，本次不搬移
         if: steps.count.outputs.n != '16'
         run: echo "本次還有組合未完成，狀態保留，下次排程會自動只重跑缺少的部分"
@@ -273,7 +285,11 @@ jobs:
           git add .state/last_commit.txt
           git rm -q -f --ignore-unmatch .state/in_progress_commit.txt
           git commit -m "完成 commit：${{ needs.check-commit.outputs.target }}，發布至 pre"
-          git push
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin main -q && git push origin main && break
+            echo "推送衝突，重試中（第 $i 次）..."
+            sleep $((RANDOM % 5 + 1))
+          done
       - name: 尚未齊全，本次不搬移
         if: steps.count.outputs.n != '16'
         run: echo "本次還有組合未完成，狀態保留，下次排程會自動只重跑缺少的部分"
