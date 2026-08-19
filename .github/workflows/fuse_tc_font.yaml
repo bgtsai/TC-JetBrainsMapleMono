@@ -180,7 +180,7 @@ jobs:
 
           run_stage() {
             local desc="$1"; shift
-            local out_file="$1"
+            local out_file="$1"; shift
             local attempt=1
             local max_attempts=3
             while true; do
@@ -376,7 +376,7 @@ jobs:
 
           run_stage() {
             local desc="$1"; shift
-            local out_file="$1"
+            local out_file="$1"; shift
             local attempt=1
             local max_attempts=3
             while true; do
