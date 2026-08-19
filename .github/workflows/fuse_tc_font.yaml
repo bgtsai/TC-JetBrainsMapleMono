@@ -20,6 +20,7 @@ jobs:
   # ── 決定這次要處理哪個版本（release 線）：優先接續上次沒做完的，沒有才看新版 ──
   check-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       updated: ${{ steps.chk.outputs.updated }}
       target: ${{ steps.chk.outputs.target }}
@@ -35,7 +36,9 @@ jobs:
             echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
             echo "updated=true" >> "$GITHUB_OUTPUT"
           else
-            LATEST=$(curl -s -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest" | jq -r '.tag_name // empty')
+            LATEST=$(curl -s --connect-timeout 10 --max-time 20 --retry 3 --retry-delay 5 --retry-all-errors \
+              -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/${UPSTREAM_REPO}/releases/latest" | jq -r '.tag_name // empty')
             if [ -z "$LATEST" ]; then
               echo "::warning::查詢上游最新版本失敗（API 無回應或無 tag_name），本次跳過，等下次排程重試"
               echo "target=" >> "$GITHUB_OUTPUT"
@@ -68,6 +71,7 @@ jobs:
   # ── 同上邏輯，commit 線 ──
   check-commit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       updated: ${{ steps.chk.outputs.updated }}
       target: ${{ steps.chk.outputs.target }}
@@ -81,9 +85,15 @@ jobs:
             echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
             echo "updated=true" >> "$GITHUB_OUTPUT"
           else
-            LATEST=$(git ls-remote "https://github.com/${UPSTREAM_REPO}.git" HEAD | cut -c1-7)
+            LATEST=""
+            for i in 1 2 3; do
+              LATEST=$(timeout 15 git ls-remote "https://github.com/${UPSTREAM_REPO}.git" HEAD | cut -c1-7)
+              if [ -n "$LATEST" ]; then break; fi
+              echo "查詢上游最新 commit 第 ${i} 次失敗，重試..."
+              sleep 5
+            done
             if [ -z "$LATEST" ]; then
-              echo "::warning::查詢上游最新 commit 失敗，本次跳過，等下次排程重試"
+              echo "::warning::查詢上游最新 commit 失敗（重試 3 次），本次跳過，等下次排程重試"
               echo "target=" >> "$GITHUB_OUTPUT"
               echo "updated=false" >> "$GITHUB_OUTPUT"
               exit 0
@@ -116,6 +126,7 @@ jobs:
     needs: check-release
     if: needs.check-release.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +140,10 @@ jobs:
       - name: 檢查這個組合是否已經處理過（斷點續傳）
         id: skip_check
         run: |
+          # 這裡刻意不做重試：gh release view 對「暫存版本還不存在」（第一個處理
+          # 這個版本的組合觸發）跟「查詢暫時失敗」都會回傳非 0，兩者都直接視為
+          # skip=false 繼續往下跑，即使誤判成「還沒處理過」也只是多做一次重複
+          # 轉換再用 --clobber 覆蓋上傳，不影響正確性，不需要為此增加複雜度
           EXISTS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq ".assets[].name" 2>/dev/null | grep -x "$ASSET_NAME" || true)
           if [ -n "$EXISTS" ]; then
             echo "此組合已存在於暫存版本，跳過"
@@ -139,40 +154,94 @@ jobs:
       - name: 下載上游字型組合
         if: steps.skip_check.outputs.skip == 'false'
         run: |
-          curl -sL "https://github.com/${UPSTREAM_REPO}/releases/download/${{ needs.check-release.outputs.target }}/JetBrainsMapleMono-${{ matrix.combo }}.zip" -o source.zip
-          mkdir -p source_fonts
-          unzip -q source.zip -d source_fonts
-      - name: 逐字重執行簡轉繁（兩階段）
+          for i in 1 2 3; do
+            rm -f source.zip
+            if curl -sL --connect-timeout 10 --speed-limit 1024 --speed-time 60 \
+                 --retry 2 --retry-delay 5 \
+                 "https://github.com/${UPSTREAM_REPO}/releases/download/${{ needs.check-release.outputs.target }}/JetBrainsMapleMono-${{ matrix.combo }}.zip" \
+                 -o source.zip \
+               && mkdir -p source_fonts \
+               && unzip -q source.zip -d source_fonts; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::下載或解壓上游字型組合失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "下載/解壓第 ${i} 次失敗，重試..."
+            rm -rf source_fonts
+            sleep 5
+          done
+      - name: 逐字重執行簡轉繁（兩階段，每個階段獨立 timeout + 重試）
         if: steps.skip_check.outputs.skip == 'false'
         run: |
           chmod +x converter/otfcc/otfccdump2 converter/otfcc/otfccbuild2
           mkdir -p output_fonts
+
+          run_stage() {
+            local desc="$1"; shift
+            local out_file="$1"
+            local attempt=1
+            local max_attempts=3
+            while true; do
+              rm -f "$out_file"
+              if timeout 90 python3 "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::${desc} 重試 ${max_attempts} 次仍失敗（逾時或執行錯誤）"
+                return 1
+              fi
+              echo "⚠️ ${desc} 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/TC-${base}.ttf"
-            python3 converter/converto.py -i "$f" -o "$stage1" -wk 0031 -v \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
-            python3 converter/converto.py -i "$stage1" -o "$final" -wk 11 \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+
+            run_stage "${base} 第一階段" "$stage1" converter/converto.py \
+              -i "$f" -o "$stage1" -wk 0031 -v \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+
+            run_stage "${base} 第二階段" "$final" converter/converto.py \
+              -i "$stage1" -o "$final" -wk 11 \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+
             rm -f "$stage1"
           done
       - name: 打包並上傳到暫存版本
         if: steps.skip_check.outputs.skip == 'false'
+        timeout-minutes: 5
         run: |
           cp OFL.txt output_fonts/OFL.txt
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
-          gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
-            --title "暫存：${{ needs.check-release.outputs.target }}" \
-            --notes "自動化暫存版本，處理完成後會搬移到 latest，不用手動理會" \
-            --prerelease 2>/dev/null || true
-          gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber
+
+          for i in 1 2 3; do
+            gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+              --title "暫存：${{ needs.check-release.outputs.target }}" \
+              --notes "自動化暫存版本，處理完成後會搬移到 latest，不用手動理會" \
+              --prerelease 2>/dev/null || true
+            if gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::上傳到暫存版本失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "上傳第 ${i} 次失敗，重試..."
+            sleep 5
+          done
 
   # ── release 線：16 個組合齊全後，搬移到正式 latest tag ──
   finalize-release:
     needs: [check-release, convert-release]
     if: always() && needs.check-release.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
@@ -181,20 +250,57 @@ jobs:
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
-          N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+          N=0
+          for i in 1 2 3; do
+            N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo "")
+            if [ -n "$N" ]; then break; fi
+            echo "查詢暫存版本資產數量第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+          N=${N:-0}
           echo "目前暫存版本已有 $N / 16 個組合"
           echo "n=$N" >> "$GITHUB_OUTPUT"
-      - name: 齊全，搬移到正式 latest 並更新狀態
+      - name: 齊全，下載暫存資產
         if: steps.count.outputs.n == '16'
         run: |
           mkdir -p dist
-          gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber
-          gh release create latest --repo "$THIS_REPO" \
-            --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
-            --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
-            2>/dev/null || true
-          gh release upload latest dist/*.zip --repo "$THIS_REPO" --clobber
+          for i in 1 2 3; do
+            if gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::下載暫存資產失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "下載暫存資產第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+      - name: 齊全，發布至正式 latest
+        if: steps.count.outputs.n == '16'
+        run: |
+          for i in 1 2 3; do
+            gh release create latest --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
+              --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
+              2>/dev/null || true
+            if gh release upload latest dist/*.zip --repo "$THIS_REPO" --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::發布至 latest 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "發布至 latest 第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+      - name: 齊全，清理暫存 tag（失敗不影響整體結果）
+        if: steps.count.outputs.n == '16'
+        continue-on-error: true
+        run: |
           gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+      - name: 齊全，更新狀態記錄
+        if: steps.count.outputs.n == '16'
+        run: |
           mkdir -p .state
           echo "${{ needs.check-release.outputs.target }}" > .state/last_release.txt
           rm -f .state/in_progress_release.txt
@@ -217,6 +323,7 @@ jobs:
     needs: check-commit
     if: needs.check-commit.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -230,6 +337,10 @@ jobs:
       - name: 檢查這個組合是否已經處理過（斷點續傳）
         id: skip_check
         run: |
+          # 這裡刻意不做重試：gh release view 對「暫存版本還不存在」（第一個處理
+          # 這個版本的組合觸發）跟「查詢暫時失敗」都會回傳非 0，兩者都直接視為
+          # skip=false 繼續往下跑，即使誤判成「還沒處理過」也只是多做一次重複
+          # 轉換再用 --clobber 覆蓋上傳，不影響正確性，不需要為此增加複雜度
           EXISTS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq ".assets[].name" 2>/dev/null | grep -x "$ASSET_NAME" || true)
           if [ -n "$EXISTS" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -239,39 +350,93 @@ jobs:
       - name: 下載上游字型組合（pre）
         if: steps.skip_check.outputs.skip == 'false'
         run: |
-          curl -sL "https://github.com/${UPSTREAM_REPO}/releases/download/pre/JetBrainsMapleMono-${{ matrix.combo }}.zip" -o source.zip
-          mkdir -p source_fonts
-          unzip -q source.zip -d source_fonts
-      - name: 逐字重執行簡轉繁（兩階段）
+          for i in 1 2 3; do
+            rm -f source.zip
+            if curl -sL --connect-timeout 10 --speed-limit 1024 --speed-time 60 \
+                 --retry 2 --retry-delay 5 \
+                 "https://github.com/${UPSTREAM_REPO}/releases/download/pre/JetBrainsMapleMono-${{ matrix.combo }}.zip" \
+                 -o source.zip \
+               && mkdir -p source_fonts \
+               && unzip -q source.zip -d source_fonts; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::下載或解壓上游字型組合失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "下載/解壓第 ${i} 次失敗，重試..."
+            rm -rf source_fonts
+            sleep 5
+          done
+      - name: 逐字重執行簡轉繁（兩階段，每個階段獨立 timeout + 重試）
         if: steps.skip_check.outputs.skip == 'false'
         run: |
           chmod +x converter/otfcc/otfccdump2 converter/otfcc/otfccbuild2
           mkdir -p output_fonts
+
+          run_stage() {
+            local desc="$1"; shift
+            local out_file="$1"
+            local attempt=1
+            local max_attempts=3
+            while true; do
+              rm -f "$out_file"
+              if timeout 90 python3 "$@"; then
+                return 0
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::${desc} 重試 ${max_attempts} 次仍失敗（逾時或執行錯誤）"
+                return 1
+              fi
+              echo "⚠️ ${desc} 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/TC-${base}.ttf"
-            python3 converter/converto.py -i "$f" -o "$stage1" -wk 0031 -v \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
-            python3 converter/converto.py -i "$stage1" -o "$final" -wk 11 \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0"
+
+            run_stage "${base} 第一階段" "$stage1" converter/converto.py \
+              -i "$f" -o "$stage1" -wk 0031 -v \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+
+            run_stage "${base} 第二階段" "$final" converter/converto.py \
+              -i "$stage1" -o "$final" -wk 11 \
+              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+
             rm -f "$stage1"
           done
       - name: 打包並上傳到暫存版本
         if: steps.skip_check.outputs.skip == 'false'
+        timeout-minutes: 5
         run: |
           cp OFL.txt output_fonts/OFL.txt
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
-          gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
-            --title "暫存（commit）：${{ needs.check-commit.outputs.target }}" \
-            --notes "自動化暫存版本，處理完成後會搬移到 pre，不用手動理會" \
-            --prerelease 2>/dev/null || true
-          gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber
+
+          for i in 1 2 3; do
+            gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+              --title "暫存（commit）：${{ needs.check-commit.outputs.target }}" \
+              --notes "自動化暫存版本，處理完成後會搬移到 pre，不用手動理會" \
+              --prerelease 2>/dev/null || true
+            if gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::上傳到暫存版本失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "上傳第 ${i} 次失敗，重試..."
+            sleep 5
+          done
 
   finalize-commit:
     needs: [check-commit, convert-commit]
     if: always() && needs.check-commit.outputs.updated == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
@@ -280,19 +445,56 @@ jobs:
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
-          N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo 0)
+          N=0
+          for i in 1 2 3; do
+            N=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets | length' 2>/dev/null || echo "")
+            if [ -n "$N" ]; then break; fi
+            echo "查詢暫存版本資產數量第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+          N=${N:-0}
           echo "n=$N" >> "$GITHUB_OUTPUT"
-      - name: 齊全，搬移到正式 pre 並更新狀態
+      - name: 齊全，下載暫存資產
         if: steps.count.outputs.n == '16'
         run: |
           mkdir -p dist
-          gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber
-          gh release create pre --repo "$THIS_REPO" \
-            --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
-            --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
-            --prerelease 2>/dev/null || true
-          gh release upload pre dist/*.zip --repo "$THIS_REPO" --clobber
+          for i in 1 2 3; do
+            if gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::下載暫存資產失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "下載暫存資產第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+      - name: 齊全，發布至正式 pre
+        if: steps.count.outputs.n == '16'
+        run: |
+          for i in 1 2 3; do
+            gh release create pre --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
+              --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
+              --prerelease 2>/dev/null || true
+            if gh release upload pre dist/*.zip --repo "$THIS_REPO" --clobber; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::發布至 pre 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "發布至 pre 第 ${i} 次失敗，重試..."
+            sleep 5
+          done
+      - name: 齊全，清理暫存 tag（失敗不影響整體結果）
+        if: steps.count.outputs.n == '16'
+        continue-on-error: true
+        run: |
           gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+      - name: 齊全，更新狀態記錄
+        if: steps.count.outputs.n == '16'
+        run: |
           mkdir -p .state
           echo "${{ needs.check-commit.outputs.target }}" > .state/last_commit.txt
           rm -f .state/in_progress_commit.txt
