@@ -498,9 +498,11 @@ def stts(font, wkon, vr=False):
 				stword.append((s, t))
 		if len(stword) + len(font['glyph_order']) > 65535:
 			nd=len(stword) + len(font['glyph_order']) - 65535
-			raise RuntimeError('Not enough glyph space! You need ' + str(nd) + ' more glyph space!')
+			raise RuntimeError('Not enough glyph space! Please remove ' + str(nd) + ' character(s) from your custom reserved list (datas/UsedChar_Custom.txt or other UsedChar_*.txt files) and try again. (字圖空間不足，請從自訂保留清單 datas/UsedChar_Custom.txt 或其他保留清單中，減少 ' + str(nd) + ' 個字元後再試一次)')
 		if len(stword) > 0:
 			addlookupword(font, stword)
+		remaining=65535 - len(font['glyph_order'])
+		print('Remaining glyph space for custom reserved characters: ' + str(remaining) + ' (剩餘可用於自訂保留清單的字圖空間：' + str(remaining) + ' 個字元)')
 
 def parseArgs(args):
 	nwk=dict()
