@@ -59,6 +59,12 @@ def removeglyhps(font, sp=False):
 			for line in f.readlines():
 				litm=line.split('#')[0].strip()
 				if litm: s.add(ord(litm))
+		custompath = os.path.join(pydir, 'datas/UsedChar_Custom.txt')
+		if os.path.exists(custompath):
+			with open(custompath,'r',encoding = 'utf-8') as f:
+				for line in f.readlines():
+					litm=line.split('#')[0].strip()
+					if litm: s.add(ord(litm))
 		cdsall=set(map(str, s))
 		nmap=set(font['cmap'].keys()).intersection(cdsall)
 		usedg.update(set([font['cmap'][mp] for mp in nmap]))
