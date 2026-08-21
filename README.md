@@ -14,21 +14,35 @@
 
 **[Releases 下載頁](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases)**
 
-發布檔案按 `TC-JBMM-{NF/XX}-{NR/XX}-{NL/XX}-{HT/XX}.zip` 格式命名（`JBMM` 是 JetBrainsMapleMono 的縮寫）：
+發布檔案按 `TC-JBMM-{4位代碼}.zip` 格式命名（`JBMM` 是 JetBrainsMapleMono 的縮寫）。4 位代碼依序對應 4 個特性開關，**1 = 啟用、0 = 停用**：
 
-1. `XX`：佔位符，表示該字型沒有增加這項特性
-2. `NF`：Nerd Font，為部分開發工具、命令列終端機、程式碼編輯器等提供圖示支援（會導致字型檔案體積略微增大）
-3. `NR`：CN Narrow，縮小中日字型間距（會導致中英文/日英文不再 2:1 寬完美對齊）
-4. `NL`：No Ligatures，停用連字
-5. `HT`：Hinted，使字型在低解析度螢幕上（≤1080P）的渲染更加均勻（可能會導致字型在高解析度螢幕上的渲染略微模糊）
+| 位數 | 特性 | 說明 |
+|---|---|---|
+| 第1位 | NF（Nerd Font） | 為部分開發工具、命令列終端機、程式碼編輯器等提供圖示支援（會導致字型檔案體積略微增大） |
+| 第2位 | NR（CN Narrow） | 縮小中日字型間距（會導致中英文/日英文不再 2:1 寬完美對齊） |
+| 第3位 | NL（No Ligatures） | 1 表示停用連字；0 表示保留連字 |
+| 第4位 | HT（Hinted） | 使字型在低解析度螢幕上（≤1080P）的渲染更加均勻（可能會導致字型在高解析度螢幕上的渲染略微模糊） |
 
-如果不清楚如何選擇，建議下載 `TC-JBMM-XX-XX-XX-XX.zip`。
+**完整對照表**（16 種組合）：
 
-每個組合的字型內部名稱（Family/PostScript name）都帶有組合標記（如 `TC_JBMM_NF-NR-NL-HT_Bold`），不同組合之間不會互相衝突，可以同時安裝多個組合並存使用。
+| 代碼 | 對應組合 | 代碼 | 對應組合 |
+|---|---|---|---|
+| `1111` | NF-NR-NL-HT | `0111` | XX-NR-NL-HT |
+| `1110` | NF-NR-NL-XX | `0110` | XX-NR-NL-XX |
+| `1101` | NF-NR-XX-HT | `0101` | XX-NR-XX-HT |
+| `1100` | NF-NR-XX-XX | `0100` | XX-NR-XX-XX |
+| `1011` | NF-XX-NL-HT | `0011` | XX-XX-NL-HT |
+| `1010` | NF-XX-NL-XX | `0010` | XX-XX-NL-XX |
+| `1001` | NF-XX-XX-HT | `0001` | XX-XX-XX-HT |
+| `1000` | NF-XX-XX-XX | `0000` | XX-XX-XX-XX |
+
+如果不清楚如何選擇，建議下載 `TC-JBMM-0000.zip`（全部特性關閉的基礎版本）。
+
+每個組合的字型內部名稱（Family/PostScript name）與壓縮包內的 `.ttf` 檔名，都帶有相同的 4 位代碼標記（如 `TC_JBMM_1111_Bold.ttf`），三者（zip 檔名／字型檔名／字型內部名稱）保證一致，不同組合之間也不會互相衝突，可以同時安裝多個組合並存使用。
 
 ## 想自己合成其他字型？
 
-本專案的簡轉繁處理，是透過 [bgtsai/TCFontCreator](https://github.com/bgtsai/TCFontCreator) 這個工具完成的。如果你想把其他字型也轉換成簡轉繁版本（不限於 JetBrainsMapleMono），可以直接下載該工具自己動手：工具提供圖形介面，也支援命令列操作；如果轉換後發現有想保留、但被誤刪的字（例如特定日文/韓文用字），可以透過工具的 `datas/UsedChar_Custom.txt` 自訂保留清單自行補上，不需要改程式碼。
+本專案的簡轉繁處理，是透過 [bgtsai/TCFontCreator](https://github.com/bgtsai/TCFontCreator) 這個工具完成的。如果你想把其他字型也轉換成簡轉繁版本（不限於 JetBrainsMapleMono），可以直接下載該工具自己動手：工具提供圖形介面，也支援命令列操作；如果轉換後發現有想保留、但被誤刪的字（例如特定日文/韓文用字或符號），可以透過工具的 `datas/UsedChar_Custom.txt` 自訂保留清單自行補上，不需要改程式碼。
 
 ## 致謝與引用資源
 
