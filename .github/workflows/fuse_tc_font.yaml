@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: '強制重新處理目前版本（忽略上游版本比對，用最新轉換邏輯重新產出）'
+        type: boolean
+        default: false
 
 concurrency:
   group: fuse-tc-font
@@ -31,9 +36,33 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           IN_PROGRESS=$(cat .state/in_progress_release.txt 2>/dev/null || echo "")
+          FORCE="${{ github.event_name == 'workflow_dispatch' && inputs.force == true }}"
           if [ -n "$IN_PROGRESS" ]; then
             echo "接續處理上次未完成的版本：$IN_PROGRESS"
             echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" == "true" ]; then
+            RECORDED=$(cat .state/last_release.txt 2>/dev/null || echo "")
+            if [ -z "$RECORDED" ]; then
+              echo "::warning::強制模式但目前沒有 last_release 記錄，無法強制重跑，本次跳過"
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            LATEST="$RECORDED"
+            echo "強制模式：忽略版本比對，重新處理目前版本 $LATEST"
+            mkdir -p .state
+            echo "$LATEST" > .state/in_progress_release.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .state/in_progress_release.txt
+            git commit -m "強制模式鎖定處理版本：$LATEST"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main -q && git push origin main && break
+              echo "推送衝突，重試中（第 $i 次）..."
+              sleep $((RANDOM % 5 + 1))
+            done
+            echo "target=$LATEST" >> "$GITHUB_OUTPUT"
             echo "updated=true" >> "$GITHUB_OUTPUT"
           else
             LATEST=$(curl -s --connect-timeout 10 --max-time 20 --retry 3 --retry-delay 5 --retry-all-errors \
@@ -80,9 +109,33 @@ jobs:
       - id: chk
         run: |
           IN_PROGRESS=$(cat .state/in_progress_commit.txt 2>/dev/null || echo "")
+          FORCE="${{ github.event_name == 'workflow_dispatch' && inputs.force == true }}"
           if [ -n "$IN_PROGRESS" ]; then
             echo "接續處理上次未完成的 commit：$IN_PROGRESS"
             echo "target=$IN_PROGRESS" >> "$GITHUB_OUTPUT"
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE" == "true" ]; then
+            RECORDED=$(cat .state/last_commit.txt 2>/dev/null || echo "")
+            if [ -z "$RECORDED" ]; then
+              echo "::warning::強制模式但目前沒有 last_commit 記錄，無法強制重跑，本次跳過"
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            LATEST="$RECORDED"
+            echo "強制模式：忽略版本比對，重新處理目前 commit $LATEST"
+            mkdir -p .state
+            echo "$LATEST" > .state/in_progress_commit.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .state/in_progress_commit.txt
+            git commit -m "強制模式鎖定處理 commit：$LATEST"
+            for i in 1 2 3 4 5; do
+              git pull --rebase origin main -q && git push origin main && break
+              echo "推送衝突，重試中（第 $i 次）..."
+              sleep $((RANDOM % 5 + 1))
+            done
+            echo "target=$LATEST" >> "$GITHUB_OUTPUT"
             echo "updated=true" >> "$GITHUB_OUTPUT"
           else
             LATEST=""
