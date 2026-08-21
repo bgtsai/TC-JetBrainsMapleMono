@@ -191,9 +191,19 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
-      ASSET_NAME: TC-JBMM-${{ matrix.combo }}.zip
     steps:
       - uses: actions/checkout@v4
+      - name: 計算組合代碼（NF/NR/NL/HT 依序轉成4位0/1代碼，啟用=1、XX=0）
+        run: |
+          COMBO="${{ matrix.combo }}"
+          IFS='-' read -r p1 p2 p3 p4 <<< "$COMBO"
+          CODE=""
+          for p in "$p1" "$p2" "$p3" "$p4"; do
+            if [ "$p" == "XX" ]; then CODE="${CODE}0"; else CODE="${CODE}1"; fi
+          done
+          echo "CODE=$CODE" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=TC-JBMM-${CODE}.zip" >> "$GITHUB_ENV"
+          echo "組合 $COMBO -> 代碼 $CODE"
       - name: 檢查這個組合是否已經處理過（斷點續傳）
         id: skip_check
         run: |
@@ -258,7 +268,7 @@ jobs:
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
             weight="${base#JetBrainsMapleMono-}"
-            newname="TC_JBMM_${{ matrix.combo }}_${weight}"
+            newname="TC_JBMM_${CODE}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/${newname}.ttf"
 
@@ -392,9 +402,19 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
-      ASSET_NAME: TC-JBMM-${{ matrix.combo }}.zip
     steps:
       - uses: actions/checkout@v4
+      - name: 計算組合代碼（NF/NR/NL/HT 依序轉成4位0/1代碼，啟用=1、XX=0）
+        run: |
+          COMBO="${{ matrix.combo }}"
+          IFS='-' read -r p1 p2 p3 p4 <<< "$COMBO"
+          CODE=""
+          for p in "$p1" "$p2" "$p3" "$p4"; do
+            if [ "$p" == "XX" ]; then CODE="${CODE}0"; else CODE="${CODE}1"; fi
+          done
+          echo "CODE=$CODE" >> "$GITHUB_ENV"
+          echo "ASSET_NAME=TC-JBMM-${CODE}.zip" >> "$GITHUB_ENV"
+          echo "組合 $COMBO -> 代碼 $CODE"
       - name: 檢查這個組合是否已經處理過（斷點續傳）
         id: skip_check
         run: |
@@ -458,7 +478,7 @@ jobs:
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
             weight="${base#JetBrainsMapleMono-}"
-            newname="TC_JBMM_${{ matrix.combo }}_${weight}"
+            newname="TC_JBMM_${CODE}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/${newname}.ttf"
 
