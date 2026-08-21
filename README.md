@@ -14,7 +14,7 @@
 
 **[Releases 下載頁](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases)**
 
-發布檔案按 `TC-JetBrainsMapleMono-{NF/XX}-{NR/XX}-{NL/XX}-{HT/XX}.zip` 格式命名：
+發布檔案按 `TC-JBMM-{NF/XX}-{NR/XX}-{NL/XX}-{HT/XX}.zip` 格式命名（`JBMM` 是 JetBrainsMapleMono 的縮寫）：
 
 1. `XX`：佔位符，表示該字型沒有增加這項特性
 2. `NF`：Nerd Font，為部分開發工具、命令列終端機、程式碼編輯器等提供圖示支援（會導致字型檔案體積略微增大）
@@ -22,7 +22,13 @@
 4. `NL`：No Ligatures，停用連字
 5. `HT`：Hinted，使字型在低解析度螢幕上（≤1080P）的渲染更加均勻（可能會導致字型在高解析度螢幕上的渲染略微模糊）
 
-如果不清楚如何選擇，建議下載 `TC-JetBrainsMapleMono-XX-XX-XX-XX.zip`。
+如果不清楚如何選擇，建議下載 `TC-JBMM-XX-XX-XX-XX.zip`。
+
+每個組合的字型內部名稱（Family/PostScript name）都帶有組合標記（如 `TC_JBMM_NF-NR-NL-HT_Bold`），不同組合之間不會互相衝突，可以同時安裝多個組合並存使用。
+
+## 想自己合成其他字型？
+
+本專案的簡轉繁處理，是透過 [bgtsai/TCFontCreator](https://github.com/bgtsai/TCFontCreator) 這個工具完成的。如果你想把其他字型也轉換成簡轉繁版本（不限於 JetBrainsMapleMono），可以直接下載該工具自己動手：工具提供圖形介面，也支援命令列操作；如果轉換後發現有想保留、但被誤刪的字（例如特定日文/韓文用字），可以透過工具的 `datas/UsedChar_Custom.txt` 自訂保留清單自行補上，不需要改程式碼。
 
 ## 致謝與引用資源
 
