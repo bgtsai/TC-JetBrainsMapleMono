@@ -260,7 +260,7 @@ jobs:
             weight="${base#JetBrainsMapleMono-}"
             newname="TC_JBMM_${{ matrix.combo }}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
-            final="output_fonts/TC-${base}.ttf"
+            final="output_fonts/${newname}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
               -i "$f" -o "$stage1" -wk 0031 -v \
@@ -460,7 +460,7 @@ jobs:
             weight="${base#JetBrainsMapleMono-}"
             newname="TC_JBMM_${{ matrix.combo }}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
-            final="output_fonts/TC-${base}.ttf"
+            final="output_fonts/${newname}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
               -i "$f" -o "$stage1" -wk 0031 -v \
