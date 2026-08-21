@@ -31,6 +31,8 @@ jobs:
       target: ${{ steps.chk.outputs.target }}
     steps:
       - uses: actions/checkout@v4
+      - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
+        run: git pull origin main
       - id: chk
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -106,6 +108,8 @@ jobs:
       target: ${{ steps.chk.outputs.target }}
     steps:
       - uses: actions/checkout@v4
+      - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
+        run: git pull origin main
       - id: chk
         run: |
           IN_PROGRESS=$(cat .state/in_progress_commit.txt 2>/dev/null || echo "")
@@ -302,6 +306,8 @@ jobs:
       STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
     steps:
       - uses: actions/checkout@v4
+      - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
+        run: git pull origin main
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
@@ -499,6 +505,8 @@ jobs:
       STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
     steps:
       - uses: actions/checkout@v4
+      - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
+        run: git pull origin main
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
