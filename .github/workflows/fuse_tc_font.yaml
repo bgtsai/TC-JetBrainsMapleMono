@@ -134,7 +134,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-release-${{ needs.check-release.outputs.target }}
-      ASSET_NAME: TC-JetBrainsMapleMono-${{ matrix.combo }}.zip
+      ASSET_NAME: TC-JBMM-${{ matrix.combo }}.zip
     steps:
       - uses: actions/checkout@v4
       - name: 檢查這個組合是否已經處理過（斷點續傳）
@@ -200,16 +200,18 @@ jobs:
 
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
+            weight="${base#JetBrainsMapleMono-}"
+            newname="TC_JBMM_${{ matrix.combo }}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/TC-${base}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
               -i "$f" -o "$stage1" -wk 0031 -v \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+              -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             run_stage "${base} 第二階段" "$final" converter/converto.py \
               -i "$stage1" -o "$final" -wk 11 \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+              -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             rm -f "$stage1"
           done
@@ -331,7 +333,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       STAGING_TAG: staging-commit-${{ needs.check-commit.outputs.target }}
-      ASSET_NAME: TC-JetBrainsMapleMono-${{ matrix.combo }}.zip
+      ASSET_NAME: TC-JBMM-${{ matrix.combo }}.zip
     steps:
       - uses: actions/checkout@v4
       - name: 檢查這個組合是否已經處理過（斷點續傳）
@@ -396,16 +398,18 @@ jobs:
 
           for f in source_fonts/*.ttf; do
             base=$(basename "$f" .ttf)
+            weight="${base#JetBrainsMapleMono-}"
+            newname="TC_JBMM_${{ matrix.combo }}_${weight}"
             stage1="output_fonts/${base}_stage1.ttf"
             final="output_fonts/TC-${base}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
               -i "$f" -o "$stage1" -wk 0031 -v \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+              -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             run_stage "${base} 第二階段" "$final" converter/converto.py \
               -i "$stage1" -o "$final" -wk 11 \
-              -n "TC_${base}" -n1 "TC_${base}" -n2 "TC_${base}" -n3 "1.0" || exit 1
+              -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             rm -f "$stage1"
           done
