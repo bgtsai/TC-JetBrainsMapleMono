@@ -331,38 +331,49 @@ jobs:
           N=${N:-0}
           echo "目前暫存版本已有 $N / 16 個組合"
           echo "n=$N" >> "$GITHUB_OUTPUT"
-      - name: 齊全，下載暫存資產
+      - name: 齊全，下載暫存資產（逐項處理，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
           mkdir -p dist
-          for i in 1 2 3; do
-            if gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::下載暫存資產失敗（重試 3 次）"
-              exit 1
-            fi
-            echo "下載暫存資產第 ${i} 次失敗，重試..."
-            sleep 5
+          ASSETS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets[].name')
+          for asset in $ASSETS; do
+            attempt=1
+            max_attempts=3
+            while true; do
+              if timeout 120 gh release download "$STAGING_TAG" --repo "$THIS_REPO" -p "$asset" -D dist --clobber; then
+                break
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::下載 $asset 失敗（重試 ${max_attempts} 次）"
+                exit 1
+              fi
+              echo "⚠️ 下載 $asset 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
           done
-      - name: 齊全，發布至正式 latest
+      - name: 齊全，發布至正式 latest（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          for i in 1 2 3; do
-            gh release create latest --repo "$THIS_REPO" \
-              --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
-              --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
-              2>/dev/null || true
-            if gh release upload latest dist/*.zip --repo "$THIS_REPO" --clobber; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::發布至 latest 失敗（重試 3 次）"
-              exit 1
-            fi
-            echo "發布至 latest 第 ${i} 次失敗，重試..."
-            sleep 5
+          gh release create latest --repo "$THIS_REPO" \
+            --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
+            --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
+            2>/dev/null || true
+          for f in dist/*.zip; do
+            attempt=1
+            max_attempts=3
+            while true; do
+              if timeout 120 gh release upload latest "$f" --repo "$THIS_REPO" --clobber; then
+                break
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::上傳 $(basename "$f") 失敗（重試 ${max_attempts} 次）"
+                exit 1
+              fi
+              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
           done
       - name: 齊全，清理暫存 tag（失敗不影響整體結果）
         if: steps.count.outputs.n == '16'
@@ -539,38 +550,49 @@ jobs:
           done
           N=${N:-0}
           echo "n=$N" >> "$GITHUB_OUTPUT"
-      - name: 齊全，下載暫存資產
+      - name: 齊全，下載暫存資產（逐項處理，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
           mkdir -p dist
-          for i in 1 2 3; do
-            if gh release download "$STAGING_TAG" --repo "$THIS_REPO" -D dist --clobber; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::下載暫存資產失敗（重試 3 次）"
-              exit 1
-            fi
-            echo "下載暫存資產第 ${i} 次失敗，重試..."
-            sleep 5
+          ASSETS=$(gh release view "$STAGING_TAG" --repo "$THIS_REPO" --json assets --jq '.assets[].name')
+          for asset in $ASSETS; do
+            attempt=1
+            max_attempts=3
+            while true; do
+              if timeout 120 gh release download "$STAGING_TAG" --repo "$THIS_REPO" -p "$asset" -D dist --clobber; then
+                break
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::下載 $asset 失敗（重試 ${max_attempts} 次）"
+                exit 1
+              fi
+              echo "⚠️ 下載 $asset 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
           done
-      - name: 齊全，發布至正式 pre
+      - name: 齊全，發布至正式 pre（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          for i in 1 2 3; do
-            gh release create pre --repo "$THIS_REPO" \
-              --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
-              --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
-              --prerelease 2>/dev/null || true
-            if gh release upload pre dist/*.zip --repo "$THIS_REPO" --clobber; then
-              break
-            fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::發布至 pre 失敗（重試 3 次）"
-              exit 1
-            fi
-            echo "發布至 pre 第 ${i} 次失敗，重試..."
-            sleep 5
+          gh release create pre --repo "$THIS_REPO" \
+            --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
+            --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
+            --prerelease 2>/dev/null || true
+          for f in dist/*.zip; do
+            attempt=1
+            max_attempts=3
+            while true; do
+              if timeout 120 gh release upload pre "$f" --repo "$THIS_REPO" --clobber; then
+                break
+              fi
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                echo "::error::上傳 $(basename "$f") 失敗（重試 ${max_attempts} 次）"
+                exit 1
+              fi
+              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
           done
       - name: 齊全，清理暫存 tag（失敗不影響整體結果）
         if: steps.count.outputs.n == '16'
