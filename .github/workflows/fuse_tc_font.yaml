@@ -32,7 +32,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
-        run: git pull origin main
+        run: |
+          for i in 1 2 3; do
+            if timeout 30 git pull origin main; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::同步至最新 main 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "同步第 ${i} 次失敗，重試..."
+            sleep 5
+          done
       - id: chk
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -109,7 +120,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
-        run: git pull origin main
+        run: |
+          for i in 1 2 3; do
+            if timeout 30 git pull origin main; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::同步至最新 main 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "同步第 ${i} 次失敗，重試..."
+            sleep 5
+          done
       - id: chk
         run: |
           IN_PROGRESS=$(cat .state/in_progress_commit.txt 2>/dev/null || echo "")
@@ -317,7 +339,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
-        run: git pull origin main
+        run: |
+          for i in 1 2 3; do
+            if timeout 30 git pull origin main; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::同步至最新 main 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "同步第 ${i} 次失敗，重試..."
+            sleep 5
+          done
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
@@ -355,10 +388,23 @@ jobs:
       - name: 齊全，發布至正式 latest（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          gh release create latest --repo "$THIS_REPO" \
-            --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
-            --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
-            2>/dev/null || true
+          for i in 1 2 3; do
+            if gh release create latest --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
+              --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
+              2>/dev/null; then
+              break
+            fi
+            if gh release view latest --repo "$THIS_REPO" &>/dev/null; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::建立/確認 latest release 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "建立 latest release 第 ${i} 次失敗，重試..."
+            sleep 5
+          done
           for f in dist/*.zip; do
             attempt=1
             max_attempts=3
@@ -537,7 +583,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
-        run: git pull origin main
+        run: |
+          for i in 1 2 3; do
+            if timeout 30 git pull origin main; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::同步至最新 main 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "同步第 ${i} 次失敗，重試..."
+            sleep 5
+          done
       - name: 檢查是否 16 個組合都已齊全
         id: count
         run: |
@@ -574,10 +631,23 @@ jobs:
       - name: 齊全，發布至正式 pre（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          gh release create pre --repo "$THIS_REPO" \
-            --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
-            --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
-            --prerelease 2>/dev/null || true
+          for i in 1 2 3; do
+            if gh release create pre --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
+              --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
+              --prerelease 2>/dev/null; then
+              break
+            fi
+            if gh release view pre --repo "$THIS_REPO" &>/dev/null; then
+              break
+            fi
+            if [ "$i" -eq 3 ]; then
+              echo "::error::建立/確認 pre release 失敗（重試 3 次）"
+              exit 1
+            fi
+            echo "建立 pre release 第 ${i} 次失敗，重試..."
+            sleep 5
+          done
           for f in dist/*.zip; do
             attempt=1
             max_attempts=3
