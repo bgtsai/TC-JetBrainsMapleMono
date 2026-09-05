@@ -10,6 +10,7 @@
 - 正式 release 觸發的版本發布在 [`latest`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/latest) tag，commit 觸發（尚未出正式 release 的開發版）發布在 [`pre`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/pre) tag
 - 具備斷點續傳機制：處理中斷或失敗時，下次執行只會重跑尚未完成的組合，不會整批重來
 - 除了中文常用字、日文假名/常用漢字/人名用漢字、韓文常用音節，字型的一簡多繁處理也涵蓋拉丁文擴充、希臘文、西里爾文與一般符號類（標點、箭頭、數學符號、製表符等），這些字元轉換後不會被誤刪
+- 轉換過程不會把彎引號（`''`、`""`）替換成中文直角引號（`「」`、`『』`）——查證確認這種替換並非源自 [OpenCC](https://github.com/BYVoid/OpenCC) 官方詞庫，是上游工具額外加入的客製規則，已在 [TCFontCreator](https://github.com/bgtsai/TCFontCreator) 移除，引號符號本身維持原樣
 
 ## 下載使用
 
