@@ -688,3 +688,93 @@ jobs:
       - name: 尚未齊全，本次不搬移
         if: steps.count.outputs.n != '16'
         run: echo "本次還有組合未完成，狀態保留，下次排程會自動只重跑缺少的部分"
+
+  # ── 每次執行都寫一則狀態 RSS（convert_status.xml），格式比照 browser-tools/route-rain ──
+  report:
+    needs: [check-release, check-commit, convert-release, convert-commit, finalize-release, finalize-commit]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: 組出本次狀態並寫入 RSS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          R_CHECK: ${{ needs.check-release.result }}
+          R_UPDATED: ${{ needs.check-release.outputs.updated }}
+          R_TARGET: ${{ needs.check-release.outputs.target }}
+          C_CHECK: ${{ needs.check-commit.result }}
+          C_UPDATED: ${{ needs.check-commit.outputs.updated }}
+          C_TARGET: ${{ needs.check-commit.outputs.target }}
+        run: |
+          set -u
+          for i in 1 2 3; do timeout 30 git pull -q origin main && break; sleep 5; done
+          REPO="${{ github.repository }}"; RUN="${{ github.run_id }}"
+          # 觸發時間（台北時間）取這次 run 的開始時間
+          STARTED=$(gh api "repos/$REPO/actions/runs/$RUN" --jq '.run_started_at' 2>/dev/null || date -u +%FT%TZ)
+          T_HM=$(TZ=Asia/Taipei date -d "$STARTED" +'%H:%M'); T_DATE=$(TZ=Asia/Taipei date -d "$STARTED" +'%Y.%m.%d')
+          JOBS=$(gh api "repos/$REPO/actions/runs/$RUN/jobs?per_page=100" 2>/dev/null || echo '{}')
+          # 檢查 job 查不到上游時只會 warning 後跳過（不算 job 失敗），要另外抓出來
+          QUERY_FAIL=""
+          for id in $(echo "$JOBS" | jq -r '.jobs[]? | select(.name|startswith("check-")) | .id'); do
+            QUERY_FAIL="$QUERY_FAIL$(gh api "repos/$REPO/check-runs/$id/annotations" --jq '[.[] | select(.message|test("失敗")) | .message] | join(" / ")' 2>/dev/null)"
+          done
+          ALL="0000 0001 0010 0011 0100 0101 0110 0111 1000 1001 1010 1011 1100 1101 1110 1111"
+
+          RED=0; BLUE=0; LINES=""
+          # 每條線（release / commit）判斷：沒更新、已完成、未完成
+          line() {  # $1=名稱 $2=check 結果 $3=updated $4=target $5=state 檔名前綴 $6=暫存 tag 前綴
+            local name=$1 chk=$2 upd=$3 tgt=$4 st=$5 tag=$6
+            local old; old=$(git show "${{ github.sha }}:.state/last_${st}.txt" 2>/dev/null || echo "?")
+            if [ "$chk" != "success" ]; then RED=1; LINES="${LINES}【${name}】檢查失敗"$'\n'; return; fi
+            [ "$upd" = "true" ] || return 0
+            local inprog last; inprog=$(cat ".state/in_progress_${st}.txt" 2>/dev/null || true); last=$(cat ".state/last_${st}.txt" 2>/dev/null || true)
+            if [ -z "$inprog" ] && [ "$last" = "$tgt" ]; then
+              BLUE=1; LINES="${LINES}【${name}】${old} → ${tgt}（16/16 已發布）"$'\n'
+            else
+              RED=1
+              local have; have=$(gh release view "${tag}-${tgt}" --repo "$REPO" --json assets --jq '.assets[].name' 2>/dev/null | sed -nE 's/^TC-JBMM-([01]{4})\.zip$/\1/p')
+              local n missing=""; n=$(echo "$have" | grep -c . || true)
+              for c in $ALL; do echo "$have" | grep -qx "$c" || missing="$missing$c、"; done
+              LINES="${LINES}【${name}】${old} → ${tgt}"$'\n'"【完成】${n}/16"$'\n'"【失敗組合】${missing%、}"$'\n'
+            fi
+          }
+          line release "$R_CHECK" "$R_UPDATED" "$R_TARGET" release staging-release
+          line commit "$C_CHECK" "$C_UPDATED" "$C_TARGET" commit staging-commit
+          [ -n "$QUERY_FAIL" ] && { RED=1; LINES="${LINES}【查詢上游】${QUERY_FAIL}"$'\n'; }
+
+          if [ "$RED" = 1 ]; then
+            TITLE="🔴 ${T_HM} ${T_DATE}｜轉換失敗"
+            DESC="【摘要】有項目未完成，下次執行會接續處理缺少的部分"$'\n'"${LINES}【執行紀錄】${RUN_URL}"
+          elif [ "$BLUE" = 1 ]; then
+            TITLE="🔵 ${T_HM} ${T_DATE}｜已轉換發布"
+            DESC="【摘要】上游有新版，已轉換完成並發布"$'\n'"${LINES%$'\n'}"
+          else
+            TITLE="🟢 ${T_HM} ${T_DATE}｜上游無更新"
+            DESC="【摘要】上游 Fusion-JetBrainsMapleMono 沒有新 release／commit"$'\n'"【目前版本】release $(cat .state/last_release.txt 2>/dev/null)／commit $(cat .state/last_commit.txt 2>/dev/null)"
+          fi
+          echo "$TITLE"; echo "$DESC"
+
+          write_rss() {
+            RSS_FILE=convert_status.xml CHANNEL_TITLE="TC-JetBrainsMapleMono 轉換狀態" \
+            CHANNEL_DESC="每日檢查上游 Fusion-JetBrainsMapleMono 並自動轉換簡轉繁字型的執行紀錄" \
+            CHANNEL_LINK="https://github.com/$REPO" \
+            ITEM_TITLE="$TITLE" ITEM_DESC="$DESC" ITEM_GUID="tc-jbmm-${RUN}-${{ github.run_attempt }}" \
+            python3 .github/scripts/rss_append.py
+            git add convert_status.xml
+            git commit -q -m "轉換狀態 RSS：${TITLE}"
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          write_rss
+          for i in 1 2 3 4 5; do
+            git push -q origin HEAD:main && exit 0
+            echo "推送衝突，重試中（第 $i 次）..."; sleep $((RANDOM % 5 + 1))
+            git fetch -q origin main && git reset -q --hard origin/main && write_rss
+          done
+          echo "::error::狀態 RSS 推送失敗"; exit 1
