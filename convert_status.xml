@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel>
+<title>TC-JetBrainsMapleMono 轉換狀態</title>
+<description>每日檢查上游 Fusion-JetBrainsMapleMono 並自動轉換簡轉繁字型的執行紀錄</description>
+<link>https://github.com/bgtsai/TC-JetBrainsMapleMono</link>
+</channel></rss>
