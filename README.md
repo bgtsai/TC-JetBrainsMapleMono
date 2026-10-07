@@ -12,6 +12,14 @@
 - 除了中文常用字、日文假名/常用漢字/人名用漢字、韓文常用音節，字型的一簡多繁處理也涵蓋拉丁文擴充、希臘文、西里爾文與一般符號類（標點、箭頭、數學符號、製表符等），這些字元轉換後不會被誤刪
 - 轉換過程不會把彎引號（`''`、`""`）替換成中文直角引號（`「」`、`『』`）——查證確認這種替換並非源自 [OpenCC](https://github.com/BYVoid/OpenCC) 官方詞庫，是上游工具額外加入的客製規則，已在 [TCFontCreator](https://github.com/bgtsai/TCFontCreator) 移除，引號符號本身維持原樣
 
+## 執行狀態 RSS
+
+每次排程執行都會在下面這個 RSS 新增一則（保留最近 20 則）：
+
+https://raw.githubusercontent.com/bgtsai/TC-JetBrainsMapleMono/main/convert_status.xml
+
+🟢 上游無更新 · 🔵 已轉換發布 · 🔴 轉換失敗（下次執行會接續處理缺少的組合）。
+
 ## 下載使用
 
 **[Releases 下載頁](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases)**
