@@ -4,7 +4,7 @@
 
 ## 運作方式
 
-透過 GitHub Actions 排程，每 30 分鐘檢查一次上游是否有新的 release 或新的 commit：
+透過 GitHub Actions 排程，每天台灣時間晚上 21:00 檢查一次上游是否有新的 release 或新的 commit：
 
 - 偵測到更新 → 下載該版本全部 16 種組合（Nerd Font / CN Narrow / 連字 / Hinting 四個開關的排列組合）→ 用 [TCFontCreator](https://github.com/bgtsai/TCFontCreator) 逐字重執行兩階段簡轉繁處理（一簡多繁+臺灣詞彙動態匹配，再補充字型本身簡繁異體）→ 全部組合齊全後發布
 - 正式 release 觸發的版本發布在 [`latest`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/latest) tag，commit 觸發（尚未出正式 release 的開發版）發布在 [`pre`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/pre) tag

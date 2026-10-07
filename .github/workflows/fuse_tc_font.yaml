@@ -2,7 +2,7 @@ name: 生成簡轉繁字型
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 13 * * *'   # 每天台北時間 21:00（UTC 13:00）
   workflow_dispatch:
     inputs:
       force:
