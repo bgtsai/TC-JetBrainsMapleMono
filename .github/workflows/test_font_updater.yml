@@ -1,0 +1,37 @@
+name: 測試字型更新工具
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: 第一次執行（應下載並安裝 32 個）
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: 檢查安裝結果
+        shell: powershell
+        run: |
+          $reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+          $n = @($reg.PSObject.Properties | Where-Object { [string]$_.Value -match '^TC_JBMM_(1011|1111)_' }).Count
+          $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
+          Write-Host "登錄檔 $n 筆、檔案 $f 個"
+          if ($n -ne 32 -or $f -ne 32) { exit 1 }
+      - name: 第二次執行（應顯示已是最新）
+        shell: powershell
+        run: |
+          $o = powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause | Out-String
+          Write-Host $o
+          if ($o -notmatch '已是最新') { exit 1 }
+      - name: 第三次執行 -Force（應移除 32 個再裝 32 個）
+        shell: powershell
+        run: |
+          $o = powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Force | Out-String
+          Write-Host $o
+          if ($LASTEXITCODE -ne 0 -or $o -notmatch '已移除 32' -or $o -notmatch '成功 32') { exit 1 }
+          $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
+          Write-Host "檔案 $f 個"
+          if ($f -ne 32) { exit 1 }
