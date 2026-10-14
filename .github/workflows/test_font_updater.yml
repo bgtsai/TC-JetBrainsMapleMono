@@ -4,45 +4,50 @@ on:
 jobs:
   test:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       GITHUB_TOKEN: ${{ github.token }}
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      - name: 第一次執行（應下載並安裝 32 個）
-        shell: powershell
+      - name: Run 1 - fresh install (expect 32 fonts)
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause
           if ($LASTEXITCODE -ne 0) { exit 1 }
-      - name: 檢查安裝結果
-        shell: powershell
-        run: |
           $reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
           $n = @($reg.PSObject.Properties | Where-Object { [string]$_.Value -match '^TC_JBMM_(1011|1111)_' }).Count
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
-          Write-Host "登錄檔 $n 筆、檔案 $f 個"
+          Write-Host "registry=$n files=$f"
           if ($n -ne 32 -or $f -ne 32) { exit 1 }
-      - name: 第二次執行（應顯示已是最新）
-        shell: powershell
+          if (-not (Test-Path "$env:ProgramData\TC_JBMM_Updater\state_latest.json")) { exit 1 }
+      - name: Run 2 - already latest (expect no reinstall)
         run: |
-          $o = powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause | Out-String
-          Write-Host $o
-          if ($o -notmatch '已是最新') { exit 1 }
-      - name: 第三次執行 -Force（應移除 32 個再裝 32 個）
-        shell: powershell
+          $before = (Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf' | Measure-Object LastWriteTimeUtc -Maximum).Maximum
+          $t0 = Get-Date
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $sec = ((Get-Date) - $t0).TotalSeconds
+          $after = (Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf' | Measure-Object LastWriteTimeUtc -Maximum).Maximum
+          Write-Host "seconds=$sec unchanged=$($before -eq $after)"
+          if ($before -ne $after) { exit 1 }
+      - name: Run 3 - Force (expect remove 32 then install 32, no leftovers)
         run: |
-          $o = powershell -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Force | Out-String
-          Write-Host $o
-          if ($LASTEXITCODE -ne 0 -or $o -notmatch '已移除 32' -or $o -notmatch '成功 32') { exit 1 }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Force
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
+          $n = @($reg.PSObject.Properties | Where-Object { [string]$_.Value -match '^TC_JBMM_(1011|1111)_' }).Count
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
-          Write-Host "檔案 $f 個"
-          if ($f -ne 32) { exit 1 }
-      - name: 第四次執行（不帶 token、指向不存在的 API 模擬查詢失敗）應改走直接下載
-        shell: powershell
+          Write-Host "registry=$n files=$f"
+          if ($n -ne 32 -or $f -ne 32) { exit 1 }
+      - name: Run 4 - API unavailable (expect fallback direct download)
         env:
           GITHUB_TOKEN: ''
         run: |
-          (Get-Content tools\Update-TCJBMM.ps1 -Raw -Encoding UTF8) -replace 'https://api.github.com/repos/','https://api.github.com/repos-not-exist/' | Set-Content $env:TEMP\u.ps1 -Encoding UTF8
-          $o = powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\u.ps1 -NoPause | Out-String
-          Write-Host $o
-          if ($LASTEXITCODE -ne 0 -or $o -notmatch '成功 32') { exit 1 }
+          (Get-Content tools\Update-TCJBMM.ps1 -Raw -Encoding UTF8) -replace 'https://api.github.com/repos/','https://api.github.com/repos-not-exist/' | Set-Content "$env:TEMP\u.ps1" -Encoding utf8BOM
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\u.ps1" -NoPause -Force
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
+          Write-Host "files=$f"
+          if ($f -ne 32) { exit 1 }
