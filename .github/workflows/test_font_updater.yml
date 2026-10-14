@@ -5,6 +5,8 @@ jobs:
   test:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - name: 第一次執行（應下載並安裝 32 個）
@@ -35,3 +37,12 @@ jobs:
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "檔案 $f 個"
           if ($f -ne 32) { exit 1 }
+      - name: 第四次執行（不帶 token、指向不存在的 API 模擬查詢失敗）應改走直接下載
+        shell: powershell
+        env:
+          GITHUB_TOKEN: ''
+        run: |
+          (Get-Content tools\Update-TCJBMM.ps1 -Raw -Encoding UTF8) -replace 'https://api.github.com/repos/','https://api.github.com/repos-not-exist/' | Set-Content $env:TEMP\u.ps1 -Encoding UTF8
+          $o = powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\u.ps1 -NoPause | Out-String
+          Write-Host $o
+          if ($LASTEXITCODE -ne 0 -or $o -notmatch '成功 32') { exit 1 }

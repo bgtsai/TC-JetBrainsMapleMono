@@ -1,5 +1,5 @@
 ﻿# TC-JetBrainsMapleMono 字型一鍵更新工具
-# 版本：v1.0
+# 版本：v1.1
 # 作用：抓 GitHub release 最新 zip → 解壓 → 移除 Windows 裡的舊字型 → 安裝新字型（所有使用者）
 # 用法：雙擊「更新TC_JBMM字型.bat」。參數：-Force 強制重裝；-Tag pre 改抓開發版；-NoPause 結束不暫停
 
@@ -57,6 +57,8 @@ function Invoke-Retry([string]$desc, [scriptblock]$action) {
     for ($i = 1; $i -le 5; $i++) {
         try { return & $action }
         catch {
+            # 403（未認證額度用完）、404 重試也沒用，直接丟出
+            if ($_.Exception.Message -match '\((403|404)\)') { throw }
             if ($i -eq 5) { throw "$desc 失敗（重試 5 次）：$($_.Exception.Message)" }
             $d = $delays[$i - 1]
             Write-Host "  ⚠ $desc 第 $i 次失敗，$d 秒後重試：$($_.Exception.Message)" -ForegroundColor Yellow
@@ -70,16 +72,29 @@ try {
 
     # 1. 查 release
     Write-Host '[1/5] 查詢 GitHub 最新版本...'
-    $rel = Invoke-Retry '查詢 release' {
-        Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -TimeoutSec 30 -Headers @{ 'User-Agent' = 'TCJBMM-Updater' }
+    $apiHeaders = @{ 'User-Agent' = 'TCJBMM-Updater' }
+    if ($env:GITHUB_TOKEN) { $apiHeaders['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+    $rel = $null
+    try {
+        $rel = Invoke-Retry '查詢 release' {
+            Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/tags/$Tag" -TimeoutSec 30 -Headers $apiHeaders
+        }
+    } catch {
+        # 查不到版本（例如 GitHub API 未認證額度用完）不影響下載：改用固定下載網址，但無法判斷是否已是最新
+        Write-Host "  ⚠ 無法查詢版本資訊（$($_.Exception.Message)），改為直接下載安裝" -ForegroundColor Yellow
     }
     $assets = @()
     foreach ($c in $Codes) {
-        $a = $rel.assets | Where-Object { $_.name -eq "TC-JBMM-$c.zip" }
-        if (-not $a) { throw "release「$Tag」裡找不到 TC-JBMM-$c.zip" }
+        if ($rel) {
+            $a = $rel.assets | Where-Object { $_.name -eq "TC-JBMM-$c.zip" }
+            if (-not $a) { throw "release「$Tag」裡找不到 TC-JBMM-$c.zip" }
+        } else {
+            $a = [pscustomobject]@{ name = "TC-JBMM-$c.zip"; size = $null; updated_at = $null
+                browser_download_url = "https://github.com/$Repo/releases/download/$Tag/TC-JBMM-$c.zip" }
+        }
         $assets += $a
     }
-    $stamp = ($assets | ForEach-Object { "$($_.name)=$($_.updated_at)" }) -join ';'
+    $stamp = if ($rel) { ($assets | ForEach-Object { "$($_.name)=$($_.updated_at)" }) -join ';' } else { $null }
 
     $old = $null
     if (Test-Path $StateFile) { try { $old = Get-Content $StateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { } }
@@ -87,7 +102,7 @@ try {
     foreach ($c in $Codes) {
         if (-not (Get-ChildItem $SysFonts -Filter "TC_JBMM_${c}_*.ttf" -ErrorAction SilentlyContinue)) { $allPresent = $false }
     }
-    if (-not $Force -and $old -and $old.stamp -eq $stamp -and $allPresent) {
+    if (-not $Force -and $stamp -and $old -and $old.stamp -eq $stamp -and $allPresent) {
         Write-Host "已是最新版本（上次安裝：$($old.installed_at)），不需要更新。" -ForegroundColor Green
         Write-Host '要強制重裝請用：更新TC_JBMM字型.bat -Force'
         Finish 0
@@ -102,9 +117,9 @@ try {
         Invoke-Retry "下載 $($a.name)" {
             Invoke-WebRequest -Uri $a.browser_download_url -OutFile $dest -TimeoutSec 600 -UseBasicParsing -Headers @{ 'User-Agent' = 'TCJBMM-Updater' }
             $size = (Get-Item $dest).Length
-            if ($size -ne $a.size) { throw "檔案大小不符（$size ≠ $($a.size)）" }
+            if ($a.size -and $size -ne $a.size) { throw "檔案大小不符（$size ≠ $($a.size)）" }
         } | Out-Null
-        Write-Host ("  ✓ {0}（{1:N0} MB）" -f $a.name, ($a.size / 1MB))
+        Write-Host ("  ✓ {0}（{1:N0} MB）" -f $a.name, ((Get-Item $dest).Length / 1MB))
     }
 
     # 3. 解壓
@@ -181,7 +196,7 @@ try {
     if ($pending) { Write-Host '有舊字型正在被程式使用：新字型已裝好，關閉相關程式或重新開機後舊檔會自動清除。' -ForegroundColor Yellow }
     Write-Host '已開啟的程式（例如編輯器）要重新啟動，才會讀到新字型。'
 
-    if ($fail.Count -eq 0) {
+    if ($fail.Count -eq 0 -and $stamp) {
         if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory $StateDir | Out-Null }
         @{ stamp = $stamp; installed_at = (Get-Date -Format 'yyyy-MM-dd HH:mm') } | ConvertTo-Json | Set-Content $StateFile -Encoding UTF8
         Finish 0
