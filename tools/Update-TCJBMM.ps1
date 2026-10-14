@@ -1,5 +1,5 @@
 ﻿# TC-JetBrainsMapleMono 字型一鍵更新工具
-# 版本：v1.1
+# 版本：v1.2
 # 作用：抓 GitHub release 最新 zip → 解壓 → 移除 Windows 裡的舊字型 → 安裝新字型（所有使用者）
 # 用法：雙擊「更新TC_JBMM字型.bat」。參數：-Force 強制重裝；-Tag pre 改抓開發版；-NoPause 結束不暫停
 
@@ -196,9 +196,12 @@ try {
     if ($pending) { Write-Host '有舊字型正在被程式使用：新字型已裝好，關閉相關程式或重新開機後舊檔會自動清除。' -ForegroundColor Yellow }
     Write-Host '已開啟的程式（例如編輯器）要重新啟動，才會讀到新字型。'
 
-    if ($fail.Count -eq 0 -and $stamp) {
-        if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory $StateDir | Out-Null }
-        @{ stamp = $stamp; installed_at = (Get-Date -Format 'yyyy-MM-dd HH:mm') } | ConvertTo-Json | Set-Content $StateFile -Encoding UTF8
+    if ($fail.Count -eq 0) {
+        # 查得到版本才記錄；直接下載模式不記，下次仍會重新檢查
+        if ($stamp) {
+            if (-not (Test-Path $StateDir)) { New-Item -ItemType Directory $StateDir | Out-Null }
+            @{ stamp = $stamp; installed_at = (Get-Date -Format 'yyyy-MM-dd HH:mm') } | ConvertTo-Json | Set-Content $StateFile -Encoding UTF8
+        }
         Finish 0
     }
     Finish 1
