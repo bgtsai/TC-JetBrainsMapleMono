@@ -33,10 +33,10 @@ jobs:
           delays=(5 15 30 60)
           for i in 1 2 3 4 5; do
             if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release edit "$TAG" --title "字型更新工具 ${VER}" --notes "$notes" --latest=false && \
+              gh release edit "$TAG" --title "TC-JetBrainsMapleMono 字型更新工具 ${VER}" --notes "$notes" --latest=false && \
               gh release upload "$TAG" TC-JBMM-Updater.zip --clobber && exit 0
             else
-              gh release create "$TAG" TC-JBMM-Updater.zip --title "字型更新工具 ${VER}" --notes "$notes" --latest=false && exit 0
+              gh release create "$TAG" TC-JBMM-Updater.zip --title "TC-JetBrainsMapleMono 字型更新工具 ${VER}" --notes "$notes" --latest=false && exit 0
             fi
             [ "$i" -eq 5 ] && { echo "::error::發佈失敗（重試 5 次）"; exit 1; }
             d=${delays[$((i-1))]}; echo "第 ${i} 次失敗，${d} 秒後重試"; sleep "$d"
