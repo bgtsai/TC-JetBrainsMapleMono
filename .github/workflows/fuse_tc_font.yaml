@@ -388,7 +388,8 @@ jobs:
       - name: 齊全，發布至正式 latest（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          for i in 1 2 3; do
+          delays=(5 15 30 60)
+          for i in 1 2 3 4 5; do
             if gh release create latest --repo "$THIS_REPO" \
               --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
               --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}" \
@@ -398,16 +399,18 @@ jobs:
             if gh release view latest --repo "$THIS_REPO" &>/dev/null; then
               break
             fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::建立/確認 latest release 失敗（重試 3 次）"
+            if [ "$i" -eq 5 ]; then
+              echo "::error::建立/確認 latest release 失敗（重試 5 次）"
               exit 1
             fi
-            echo "建立 latest release 第 ${i} 次失敗，重試..."
-            sleep 5
+            d=${delays[$((i-1))]}
+            echo "建立 latest release 第 ${i} 次失敗，${d} 秒後重試..."
+            sleep "$d"
           done
           for f in dist/*.zip; do
             attempt=1
-            max_attempts=3
+            max_attempts=5
+            delays=(5 15 30 60)
             while true; do
               if timeout 120 gh release upload latest "$f" --repo "$THIS_REPO" --clobber; then
                 break
@@ -416,9 +419,10 @@ jobs:
                 echo "::error::上傳 $(basename "$f") 失敗（重試 ${max_attempts} 次）"
                 exit 1
               fi
-              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              d=${delays[$((attempt-1))]}
+              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，${d} 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
               attempt=$((attempt + 1))
-              sleep 5
+              sleep "$d"
             done
           done
       - name: 齊全，清理暫存 tag（失敗不影響整體結果）
@@ -631,7 +635,8 @@ jobs:
       - name: 齊全，發布至正式 pre（逐項上傳，各自獨立timeout+重試）
         if: steps.count.outputs.n == '16'
         run: |
-          for i in 1 2 3; do
+          delays=(5 15 30 60)
+          for i in 1 2 3 4 5; do
             if gh release create pre --repo "$THIS_REPO" \
               --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
               --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}" \
@@ -641,16 +646,18 @@ jobs:
             if gh release view pre --repo "$THIS_REPO" &>/dev/null; then
               break
             fi
-            if [ "$i" -eq 3 ]; then
-              echo "::error::建立/確認 pre release 失敗（重試 3 次）"
+            if [ "$i" -eq 5 ]; then
+              echo "::error::建立/確認 pre release 失敗（重試 5 次）"
               exit 1
             fi
-            echo "建立 pre release 第 ${i} 次失敗，重試..."
-            sleep 5
+            d=${delays[$((i-1))]}
+            echo "建立 pre release 第 ${i} 次失敗，${d} 秒後重試..."
+            sleep "$d"
           done
           for f in dist/*.zip; do
             attempt=1
-            max_attempts=3
+            max_attempts=5
+            delays=(5 15 30 60)
             while true; do
               if timeout 120 gh release upload pre "$f" --repo "$THIS_REPO" --clobber; then
                 break
@@ -659,9 +666,10 @@ jobs:
                 echo "::error::上傳 $(basename "$f") 失敗（重試 ${max_attempts} 次）"
                 exit 1
               fi
-              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，5 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
+              d=${delays[$((attempt-1))]}
+              echo "⚠️ 上傳 $(basename "$f") 第 ${attempt} 次失敗，${d} 秒後重試" | tee -a "$GITHUB_STEP_SUMMARY"
               attempt=$((attempt + 1))
-              sleep 5
+              sleep "$d"
             done
           done
       - name: 齊全，清理暫存 tag（失敗不影響整體結果）
