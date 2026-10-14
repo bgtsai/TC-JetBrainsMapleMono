@@ -52,6 +52,7 @@ jobs:
           Write-Host "files=$f"
           if ($f -ne 32) { exit 1 }
       - name: Run 5 - fake acrotray running (expect paused then restored with new PID)
+        shell: powershell
         run: |
           $dir = "$env:TEMP\fakeacro"; New-Item -ItemType Directory $dir -Force | Out-Null
           Add-Type -OutputAssembly "$dir\acrotray.exe" -OutputType WindowsApplication -TypeDefinition 'public static class P { public static void Main() { System.Threading.Thread.Sleep(600000); } }'
