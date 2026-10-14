@@ -24,8 +24,9 @@ jobs:
           echo "VER=$ver" >> "$GITHUB_ENV"
           mkdir -p pkg/TC-JBMM-Updater
           cp tools/Update-TCJBMM.ps1 tools/TC-JBMM-Updater.ini tools/更新TC_JBMM字型.bat pkg/TC-JBMM-Updater/
-          (cd pkg && zip -qr ../TC-JBMM-Updater.zip TC-JBMM-Updater)
-          unzip -l TC-JBMM-Updater.zip
+          # 用 Python zipfile 打包：非 ASCII 檔名會標 UTF-8 旗標（runner 的 zip 指令會把中文檔名變成 #Uxxxx）
+          python3 -c "import zipfile,os;z=zipfile.ZipFile('TC-JBMM-Updater.zip','w',zipfile.ZIP_DEFLATED);[z.write(os.path.join('pkg/TC-JBMM-Updater',f),'TC-JBMM-Updater/'+f) for f in sorted(os.listdir('pkg/TC-JBMM-Updater'))];z.close()"
+          python3 -c "import zipfile;print(*zipfile.ZipFile('TC-JBMM-Updater.zip').namelist(),sep='\n')"
       - name: 發佈（固定 tag，不搶最新版標記）
         run: |
           notes="Windows 字型一鍵更新工具 ${VER}（使用說明見 README「Windows 一鍵安裝／更新字型」一節）"
