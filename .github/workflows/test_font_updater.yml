@@ -12,7 +12,7 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      - name: Run 1 - fresh install (expect 32 fonts)
+      - name: Run 1 - fresh install (demo ini 16+4 = 20 fonts)
         run: |
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -20,7 +20,7 @@ jobs:
           $n = @($reg.PSObject.Properties | Where-Object { [string]$_.Value -match '^TC_JBMM_(1011|1111)_' }).Count
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "registry=$n files=$f"
-          if ($n -ne 32 -or $f -ne 32) { exit 1 }
+          if ($n -ne 20 -or $f -ne 20) { exit 1 }
           if (-not (Test-Path "$env:ProgramData\TC_JBMM_Updater\state_latest.json")) { exit 1 }
       - name: Run 2 - already latest (expect no reinstall)
         run: |
@@ -32,7 +32,7 @@ jobs:
           $after = (Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf' | Measure-Object LastWriteTimeUtc -Maximum).Maximum
           Write-Host "seconds=$sec unchanged=$($before -eq $after)"
           if ($before -ne $after) { exit 1 }
-      - name: Run 3 - Force (expect remove 32 then install 32, no leftovers)
+      - name: Run 3 - Force (expect reinstall 20, no leftovers)
         run: |
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Force
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -40,7 +40,7 @@ jobs:
           $n = @($reg.PSObject.Properties | Where-Object { [string]$_.Value -match '^TC_JBMM_(1011|1111)_' }).Count
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "registry=$n files=$f"
-          if ($n -ne 32 -or $f -ne 32) { exit 1 }
+          if ($n -ne 20 -or $f -ne 20) { exit 1 }
       - name: Run 4 - API unavailable (expect fallback direct download)
         env:
           GITHUB_TOKEN: ''
@@ -50,7 +50,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "files=$f"
-          if ($f -ne 32) { exit 1 }
+          if ($f -ne 20) { exit 1 }
       - name: Run 5 - fake acrotray running (expect paused then restored with new PID)
         shell: powershell
         run: |
@@ -75,3 +75,25 @@ jobs:
           $n = @(Get-Process -Name acrotray -ErrorAction SilentlyContinue).Count
           Write-Host "acrotray count=$n"
           if ($n -ne 0) { exit 1 }
+      - name: Run 7 - config changed (expect reinstall per new config; unlisted code untouched)
+        run: |
+          $ini = "$env:TEMP\t7.ini"
+          Set-Content $ini -Encoding utf8BOM -Value "[General]`nTag = latest`n[Fonts]`n1011 = regular , Bold  ; comment"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Config $ini
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $a = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_1011_*.ttf').Name
+          $b = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_1111_*.ttf').Count
+          Write-Host "1011=$($a -join ',') 1111count=$b"
+          if ($a.Count -ne 2 -or ($a -notcontains 'TC_JBMM_1011_Regular.ttf') -or ($a -notcontains 'TC_JBMM_1011_Bold.ttf') -or $b -ne 4) { exit 1 }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Config $ini
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Run 8 - invalid config (expect exit 1, nothing changed)
+        run: |
+          $ini = "$env:TEMP\t8.ini"
+          Set-Content $ini -Encoding utf8BOM -Value "[General]`nTag = beta`n[Fonts]`n101 = *`n1011 = Regulr"
+          $before = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools\Update-TCJBMM.ps1 -NoPause -Config $ini
+          $code = $LASTEXITCODE
+          $after = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
+          Write-Host "exit=$code before=$before after=$after"
+          if ($code -ne 1 -or $before -ne $after) { exit 1 }

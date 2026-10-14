@@ -1,11 +1,12 @@
 ﻿# TC-JetBrainsMapleMono 字型一鍵更新工具
-# 版本：v1.3
-# 作用：抓 GitHub release 最新 zip → 解壓 → 移除 Windows 裡的舊字型 → 安裝新字型（所有使用者）
-# 用法：雙擊「更新TC_JBMM字型.bat」。參數：-Force 強制重裝；-Tag pre 改抓開發版；-NoPause 結束不暫停
+# 版本：v2.0
+# 作用：依設定檔 TC-JBMM-Updater.ini 抓 GitHub release 最新 zip → 解壓 → 移除 Windows 裡的舊字型 → 安裝新字型（所有使用者）
+# 用法：雙擊「更新TC_JBMM字型.bat」。
+# 參數：-Force 強制重裝；-Tag pre 暫時改抓開發版（優先於設定檔）；-Config 指定別的設定檔；-NoPause 結束不暫停
 
 param(
-    [string]$Tag = 'latest',
-    [string[]]$Codes = @('1011', '1111'),
+    [string]$Tag = '',
+    [string]$Config = '',
     [switch]$Force,
     [switch]$NoPause
 )
@@ -13,7 +14,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $Repo = 'bgtsai/TC-JetBrainsMapleMono'
 $StateDir = Join-Path $env:ProgramData 'TC_JBMM_Updater'
-$StateFile = Join-Path $StateDir "state_$Tag.json"
+if (-not $Config) { $Config = Join-Path $PSScriptRoot 'TC-JBMM-Updater.ini' }
+$AllWeights = @('Thin', 'ThinItalic', 'ExtraLight', 'ExtraLightItalic', 'Light', 'LightItalic',
+    'Regular', 'Italic', 'Medium', 'MediumItalic', 'SemiBold', 'SemiBoldItalic',
+    'Bold', 'BoldItalic', 'ExtraBold', 'ExtraBoldItalic')
 $SysFonts = Join-Path $env:WINDIR 'Fonts'
 $UserFonts = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
 $RegHKLM = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
@@ -27,7 +31,8 @@ function Finish([int]$code) {
 # ── 自動提權：不是系統管理員就用 RunAs 重新啟動自己（會跳一次 UAC，按「是」即可）
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
-    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Tag', $Tag, '-Codes', ($Codes -join ','))
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$PSCommandPath`"", '-Config', "`"$Config`"")
+    if ($Tag) { $argList += @('-Tag', $Tag) }
     if ($Force) { $argList += '-Force' }
     if ($NoPause) { $argList += '-NoPause' }
     try {
@@ -38,8 +43,42 @@ if (-not $isAdmin) {
     }
     exit 0
 }
-# 從提權後的參數字串還原陣列（-Codes 1011,1111 會被當成一個字串）
-$Codes = @($Codes | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+
+# ── 讀設定檔（INI）：[General] Tag；[Fonts] 代碼 = 字重清單 或 *
+function Read-Config([string]$path) {
+    if (-not (Test-Path $path)) { throw "找不到設定檔：$path（請把 TC-JBMM-Updater.ini 放在腳本同一個資料夾）" }
+    $cfg = @{ Tag = 'latest'; Fonts = [ordered]@{} }
+    $section = ''; $n = 0; $errs = @()
+    foreach ($line in (Get-Content $path -Encoding UTF8)) {
+        $n++
+        $s = ($line -replace '^\s*[;#].*$', '').Trim()
+        if (-not $s) { continue }
+        if ($s -match '^\[(.+)\]$') { $section = $Matches[1].Trim(); continue }
+        if ($s -notmatch '^([^=]+)=(.*)$') { $errs += "第 $n 行看不懂：$line"; continue }
+        $k = $Matches[1].Trim(); $v = ($Matches[2] -replace '\s[;#].*$', '').Trim()
+        if ($section -eq 'General') {
+            if ($k -eq 'Tag') {
+                if ($v -notin @('latest', 'pre')) { $errs += "第 $n 行：Tag 只能是 latest 或 pre（目前是「$v」）" } else { $cfg.Tag = $v }
+            } else { $errs += "第 $n 行：[General] 不認得「$k」" }
+        } elseif ($section -eq 'Fonts') {
+            if ($k -notmatch '^[01]{4}$') { $errs += "第 $n 行：代碼要是 4 位的 0/1（例如 1011），目前是「$k」"; continue }
+            if ($cfg.Fonts.Contains($k)) { $errs += "第 $n 行：代碼 $k 重複出現"; continue }
+            if ($v -eq '*') { $cfg.Fonts[$k] = $AllWeights; continue }
+            $ws = @()
+            foreach ($w in ($v -split '[,，]') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) {
+                $hit = $AllWeights | Where-Object { $_ -eq $w }
+                if ($hit) { if ($ws -notcontains $hit) { $ws += $hit } }
+                else { $errs += "第 $n 行：不認得字重「$w」" }
+            }
+            if ($ws.Count -eq 0) { $errs += "第 $n 行：代碼 $k 沒有指定任何字重（全部安裝請寫 *）" } else { $cfg.Fonts[$k] = $ws }
+        } else { $errs += "第 $n 行：不在 [General] 或 [Fonts] 區段裡：$line" }
+    }
+    if ($cfg.Fonts.Count -eq 0 -and -not $errs) { $errs += '[Fonts] 區段裡沒有任何要安裝的代碼' }
+    if ($errs) {
+        throw ("設定檔有誤（$path）：`n  " + ($errs -join "`n  ") + "`n  可用的字重：" + ($AllWeights -join ', ') + "；全部安裝請寫 *")
+    }
+    return $cfg
+}
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $ProgressPreference = 'SilentlyContinue'
@@ -68,7 +107,17 @@ function Invoke-Retry([string]$desc, [scriptblock]$action) {
 }
 
 try {
-    Write-Host "== TC-JetBrainsMapleMono 字型更新（$Tag；代碼 $($Codes -join '、')）==" -ForegroundColor Cyan
+    $cfg = Read-Config $Config
+    if (-not $Tag) { $Tag = $cfg.Tag }
+    $Codes = @($cfg.Fonts.Keys)
+    $StateFile = Join-Path $StateDir "state_$Tag.json"
+    # 設定內容摘要：設定檔一改就會重新安裝
+    $cfgSig = ($Codes | ForEach-Object { "$_=" + ($cfg.Fonts[$_] -join ',') }) -join ';'
+    Write-Host "== TC-JetBrainsMapleMono 字型更新（$Tag）==" -ForegroundColor Cyan
+    foreach ($c in $Codes) {
+        $ws = $cfg.Fonts[$c]
+        Write-Host ("  {0}：{1}" -f $c, $(if ($ws.Count -eq $AllWeights.Count) { '全部 16 個字重' } else { $ws -join '、' }))
+    }
 
     # 1. 查 release
     Write-Host '[1/5] 查詢 GitHub 最新版本...'
@@ -94,13 +143,15 @@ try {
         }
         $assets += $a
     }
-    $stamp = if ($rel) { ($assets | ForEach-Object { "$($_.name)=$($_.updated_at)" }) -join ';' } else { $null }
+    $stamp = if ($rel) { (($assets | ForEach-Object { "$($_.name)=$($_.updated_at)" }) -join ';') + '|' + $cfgSig } else { $null }
 
     $old = $null
     if (Test-Path $StateFile) { try { $old = Get-Content $StateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { } }
     $allPresent = $true
     foreach ($c in $Codes) {
-        if (-not (Get-ChildItem $SysFonts -Filter "TC_JBMM_${c}_*.ttf" -ErrorAction SilentlyContinue)) { $allPresent = $false }
+        foreach ($w in $cfg.Fonts[$c]) {
+            if (-not (Get-ChildItem $SysFonts -Filter "TC_JBMM_${c}_${w}*.ttf" -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -match "^TC_JBMM_${c}_${w}(_\d{14})?$" })) { $allPresent = $false }
+        }
     }
     if (-not $Force -and $stamp -and $old -and $old.stamp -eq $stamp -and $allPresent) {
         Write-Host "已是最新版本（上次安裝：$($old.installed_at)），不需要更新。" -ForegroundColor Green
@@ -128,10 +179,14 @@ try {
     foreach ($a in $assets) {
         $dir = Join-Path $work ($a.name -replace '\.zip$', '')
         Expand-Archive -Path (Join-Path $work $a.name) -DestinationPath $dir -Force
-        $newFonts += Get-ChildItem $dir -Filter 'TC_JBMM_*.ttf' -Recurse
+        $code = $a.name -replace '^TC-JBMM-(\d{4})\.zip$', '$1'
+        foreach ($w in $cfg.Fonts[$code]) {
+            $ff = Get-ChildItem $dir -Filter "TC_JBMM_${code}_${w}.ttf" -Recurse | Select-Object -First 1
+            if (-not $ff) { throw "TC-JBMM-$code.zip 裡沒有 TC_JBMM_${code}_${w}.ttf" }
+            $newFonts += $ff
+        }
     }
-    if ($newFonts.Count -eq 0) { throw 'zip 裡沒有找到字型檔' }
-    Write-Host "  ✓ 共 $($newFonts.Count) 個字型檔"
+    Write-Host "  ✓ 依設定挑出 $($newFonts.Count) 個字型檔"
 
     # 4. 移除舊字型（系統與目前使用者兩處：登錄檔＋檔案）
     # 暫停 Acrobat 的字型監看程式：acrotray 收到字型變更通知會叫起 Distiller，連續觸發時會撞出「錯誤 183」
