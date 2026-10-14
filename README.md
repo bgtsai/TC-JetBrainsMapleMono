@@ -8,6 +8,7 @@
 
 - 偵測到更新 → 下載該版本全部 16 種組合（Nerd Font / CN Narrow / 連字 / Hinting 四個開關的排列組合）→ 用 [TCFontCreator](https://github.com/bgtsai/TCFontCreator) 逐字重執行兩階段簡轉繁處理（一簡多繁+臺灣詞彙動態匹配，再補充字型本身簡繁異體）→ 全部組合齊全後發布
 - 正式 release 觸發的版本發布在 [`latest`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/latest) tag，commit 觸發（尚未出正式 release 的開發版）發布在 [`pre`](https://github.com/bgtsai/TC-JetBrainsMapleMono/releases/tag/pre) tag
+- 每次轉換都會自動抓 [TCFontCreator 作者維護的保留字清單](https://github.com/bgtsai/TCFontCreator/blob/main/main/datas/UsedChar_Author.txt)最新版，清單上的字一定會保留；抓不到清單時這次轉換會直接失敗，不會用舊清單產出字型
 - 具備斷點續傳機制：處理中斷或失敗時，下次執行只會重跑尚未完成的組合，不會整批重來
 - 除了中文常用字、日文假名/常用漢字/人名用漢字、韓文常用音節，字型的一簡多繁處理也涵蓋拉丁文擴充、希臘文、西里爾文與一般符號類（標點、箭頭、數學符號、製表符等），這些字元轉換後不會被誤刪
 - 轉換過程不會把彎引號（`''`、`""`）替換成中文直角引號（`「」`、`『』`）——查證確認這種替換並非源自 [OpenCC](https://github.com/BYVoid/OpenCC) 官方詞庫，是上游工具額外加入的客製規則，已在 [TCFontCreator](https://github.com/bgtsai/TCFontCreator) 移除，引號符號本身維持原樣
@@ -132,7 +133,7 @@ Tag = latest
 
 ## 想自己合成其他字型？
 
-本專案的簡轉繁處理，是透過 [bgtsai/TCFontCreator](https://github.com/bgtsai/TCFontCreator) 這個工具完成的。如果你想把其他字型也轉換成簡轉繁版本（不限於 JetBrainsMapleMono），可以直接下載該工具自己動手：工具提供圖形介面，也支援命令列操作；如果轉換後發現有想保留、但被誤刪的字（例如特定日文/韓文用字或符號），可以透過工具的 `datas/UsedChar_Custom.txt` 自訂保留清單自行補上，不需要改程式碼。
+本專案的簡轉繁處理，是透過 [bgtsai/TCFontCreator](https://github.com/bgtsai/TCFontCreator) 這個工具完成的。如果你想把其他字型也轉換成簡轉繁版本（不限於 JetBrainsMapleMono），可以直接下載該工具自己動手：工具提供圖形介面，也支援命令列操作；如果轉換後發現有想保留、但被誤刪的字（例如特定日文/韓文用字或符號），可以透過工具的 `datas/UsedChar_Custom.txt` 自訂保留清單自行補上，不需要改程式碼。工具另有作者維護的保留字清單，勾選「線上更新保留字清單」（預設勾選）就會在每次轉換前自動更新，詳見該工具 README 的「線上更新保留字清單」一節。
 
 ## 致謝與引用資源
 
