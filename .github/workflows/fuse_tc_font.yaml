@@ -295,7 +295,7 @@ jobs:
             final="output_fonts/${newname}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
-              -i "$f" -o "$stage1" -wk 0031 -v \
+              -i "$f" -o "$stage1" -wk 0031 -v -sync -syncstrict \
               -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             run_stage "${base} 第二階段" "$final" converter/converto.py \
@@ -540,7 +540,7 @@ jobs:
             final="output_fonts/${newname}.ttf"
 
             run_stage "${base} 第一階段" "$stage1" converter/converto.py \
-              -i "$f" -o "$stage1" -wk 0031 -v \
+              -i "$f" -o "$stage1" -wk 0031 -v -sync -syncstrict \
               -n "$newname" -n1 "$newname" -n2 "$newname" -n3 "1.0" || exit 1
 
             run_stage "${base} 第二階段" "$final" converter/converto.py \

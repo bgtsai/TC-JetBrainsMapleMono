@@ -62,6 +62,12 @@ def removeglyhps(font, sp=False):
 			for line in f.readlines():
 				litm=line.split('#')[0].strip()
 				if litm: s.add(ord(litm))
+		authorpath = os.path.join(pydir, 'datas/UsedChar_Author.txt')
+		if os.path.exists(authorpath):
+			with open(authorpath,'r',encoding = 'utf-8') as f:
+				for line in f.readlines():
+					litm=line.split('#')[0].strip()
+					if litm: s.add(ord(litm))
 		custompath = os.path.join(pydir, 'datas/UsedChar_Custom.txt')
 		if os.path.exists(custompath):
 			with open(custompath,'r',encoding = 'utf-8') as f:
@@ -508,6 +514,35 @@ def stts(font, wkon, vr=False):
 		remaining=65535 - len(font['glyph_order'])
 		print('Remaining glyph space for custom reserved characters: ' + str(remaining) + ' (剩餘可用於自訂保留清單的字圖空間：' + str(remaining) + ' 個字元)')
 
+AUTHOR_URL = 'https://raw.githubusercontent.com/bgtsai/TCFontCreator/main/main/datas/UsedChar_Author.txt'
+
+def syncauthor(strict):
+	# 線上更新保留字清單：抓 GitHub 上作者維護的最新版，成功就覆蓋本機 datas/UsedChar_Author.txt
+	import urllib.request, time
+	localpath = os.path.join(pydir, 'datas/UsedChar_Author.txt')
+	print('Syncing author reserved list from GitHub...')
+	for n in range(1, 4):
+		try:
+			req = urllib.request.Request(AUTHOR_URL + '?t=' + str(int(time.time())), headers={'Cache-Control': 'no-cache'})
+			with urllib.request.urlopen(req, timeout=10) as r:
+				data = r.read().decode('utf-8')
+			cnt = 0
+			for line in data.splitlines():
+				litm = line.split('#')[0].strip()
+				if not litm: continue
+				if len(litm) != 1: raise ValueError('invalid line: ' + litm[:20])
+				cnt += 1
+			with open(localpath, 'w', encoding='utf-8', newline='\n') as f:
+				f.write(data)
+			print('Author reserved list synced: ' + str(cnt) + ' character(s).')
+			return
+		except Exception as e:
+			print('Sync attempt ' + str(n) + '/3 failed: ' + str(e))
+			if n < 3: time.sleep(2)
+	if strict:
+		raise RuntimeError('Failed to sync author reserved list from GitHub, conversion stopped. (線上更新保留字清單失敗，已停止轉換)')
+	print('Warning: sync failed, using local author reserved list. (線上更新失敗，改用本機保留字清單)')
+
 def parseArgs(args):
 	nwk=dict()
 	cfars=['-i', '-o', '-wk', '-n', '-n1', '-n2', '-n3']
@@ -516,6 +551,8 @@ def parseArgs(args):
 	nwk['-i2']=list()
 	nwk['-v']=False
 	nwk['-ih']=False
+	nwk['-sync']=False
+	nwk['-syncstrict']=False
 	argn = len(args)
 	i = 0
 	while i<argn:
@@ -527,7 +564,7 @@ def parseArgs(args):
 		elif arg=='-i2':
 			nwk['-i2'].append(args[i])
 			i += 1
-		elif arg in ['-v', '-ih']:
+		elif arg in ['-v', '-ih', '-sync', '-syncstrict']:
 			nwk[arg]=True
 		else:
 			raise RuntimeError("Unknown option '%s'." % (arg))
@@ -541,6 +578,8 @@ def parseArgs(args):
 
 def run(args):
 	wkfl=parseArgs(args)
+	if wkfl['-sync']:
+		syncauthor(wkfl['-syncstrict'])
 	print(f'Loading font', wkfl['-i'])
 	infont=json.loads(subprocess.check_output((otfccdump, '--no-bom', wkfl['-i'])).decode("utf-8", "ignore"))
 	if wkfl['-wk'] in ("10", "12"):
