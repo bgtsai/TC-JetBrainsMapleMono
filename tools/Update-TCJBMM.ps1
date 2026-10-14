@@ -1,5 +1,5 @@
 ﻿# TC-JetBrainsMapleMono 字型一鍵更新工具
-# 版本：v1.2
+# 版本：v1.3
 # 作用：抓 GitHub release 最新 zip → 解壓 → 移除 Windows 裡的舊字型 → 安裝新字型（所有使用者）
 # 用法：雙擊「更新TC_JBMM字型.bat」。參數：-Force 強制重裝；-Tag pre 改抓開發版；-NoPause 結束不暫停
 
@@ -134,6 +134,17 @@ try {
     Write-Host "  ✓ 共 $($newFonts.Count) 個字型檔"
 
     # 4. 移除舊字型（系統與目前使用者兩處：登錄檔＋檔案）
+    # 暫停 Acrobat 的字型監看程式：acrotray 收到字型變更通知會叫起 Distiller，連續觸發時會撞出「錯誤 183」
+    $acroNames = @('acrotray', 'acrodist')
+    $acroWasRunning = @()
+    foreach ($n in $acroNames) {
+        foreach ($proc in @(Get-Process -Name $n -ErrorAction SilentlyContinue)) {
+            $acroWasRunning += [pscustomobject]@{ Name = $n; Path = $proc.Path }
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if ($acroWasRunning.Count) { Write-Host "  （已暫停 $(($acroWasRunning.Name | Select-Object -Unique) -join '、')，安裝完會恢復 acrotray）" }
+
     Write-Host '[4/5] 移除舊字型...'
     $pattern = '^TC_JBMM_(' + (($Codes | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')_'
     $removed = 0; $pending = 0
@@ -189,6 +200,21 @@ try {
     [TCJBMM.Native]::SendMessageTimeout([IntPtr]0xffff, 0x001D, [IntPtr]::Zero, [IntPtr]::Zero, 2, 5000, [ref]$r) | Out-Null  # WM_FONTCHANGE
 
     Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+
+    # 恢復 acrotray（只恢復原本有在跑的；Distiller 平常是需要時才被叫起，不主動開）
+    # 先等字型變更通知處理完；用 explorer.exe 啟動，讓它以一般使用者身分執行，而不是繼承這裡的系統管理員權限
+    if ($acroWasRunning.Count) {
+        Start-Sleep -Seconds 5
+        if (-not (Get-Process -Name 'acrodist' -ErrorAction SilentlyContinue)) {
+            Remove-Item (Join-Path $env:TEMP 'Acrobat Distiller DC') -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($a in @($acroWasRunning | Where-Object { $_.Name -eq 'acrotray' -and $_.Path } | Select-Object -First 1)) {
+            if (-not (Get-Process -Name 'acrotray' -ErrorAction SilentlyContinue)) {
+                try { Start-Process explorer.exe -ArgumentList "`"$($a.Path)`""; Write-Host '  （已恢復 acrotray）' }
+                catch { Write-Host "  ⚠ acrotray 恢復失敗，需要時可手動開啟 Acrobat 讓它重新啟動：$($_.Exception.Message)" -ForegroundColor Yellow }
+            }
+        }
+    }
 
     Write-Host ''
     Write-Host "安裝完成：成功 $ok 個，失敗 $($fail.Count) 個" -ForegroundColor $(if ($fail.Count) { 'Yellow' } else { 'Green' })
