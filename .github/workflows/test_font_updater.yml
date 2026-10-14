@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ''
         run: |
           (Get-Content tools\Update-TCJBMM.ps1 -Raw -Encoding UTF8) -replace 'https://api.github.com/repos/','https://api.github.com/repos-not-exist/' | Set-Content "$env:TEMP\u.ps1" -Encoding utf8BOM
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\u.ps1" -NoPause -Force
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\u.ps1" -NoPause -Force -Config "$PWD\tools\TC-JBMM-Updater.ini"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $f = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "files=$f"
