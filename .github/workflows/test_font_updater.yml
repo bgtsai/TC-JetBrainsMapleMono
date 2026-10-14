@@ -97,3 +97,4 @@ jobs:
           $after = @(Get-ChildItem "$env:WINDIR\Fonts" -Filter 'TC_JBMM_*.ttf').Count
           Write-Host "exit=$code before=$before after=$after"
           if ($code -ne 1 -or $before -ne $after) { exit 1 }
+          exit 0
