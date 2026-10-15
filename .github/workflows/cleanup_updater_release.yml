@@ -1,0 +1,17 @@
+name: 一次性：刪除舊的 updater release
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - run: |
+          if gh release view updater --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete updater --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+          fi
+          echo "updater release 已不存在"
