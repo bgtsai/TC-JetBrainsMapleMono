@@ -3,6 +3,8 @@
 <title>TC-JetBrainsMapleMono 轉換狀態</title>
 <description>每日檢查上游 Fusion-JetBrainsMapleMono 並自動轉換簡轉繁字型的執行紀錄</description>
 <link>https://github.com/bgtsai/TC-JetBrainsMapleMono</link>
+<item><title>🔵 01:08 2026.10.17｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
+【commit】a7877f6 → 62df472（16/16 已發布）]]></description><pubDate>Fri, 16 Oct 2026 17:19:05 +0000</pubDate><guid isPermaLink="false">tc-jbmm-38937350287-1</guid></item>
 <item><title>🔵 01:32 2026.10.16｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
 【commit】70c1789 → a7877f6（16/16 已發布）]]></description><pubDate>Thu, 15 Oct 2026 17:44:45 +0000</pubDate><guid isPermaLink="false">tc-jbmm-38778237099-1</guid></item>
 <item><title>🔵 01:44 2026.10.15｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
