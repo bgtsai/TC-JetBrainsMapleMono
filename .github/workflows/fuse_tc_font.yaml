@@ -110,6 +110,28 @@ jobs:
             fi
           fi
 
+      - name: 建立暫存版本（只在這裡建一次；16 個轉換工作同時建立會互搶，留下沒有 tag 的草稿）
+        if: steps.chk.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STAGING_TAG: staging-release-${{ steps.chk.outputs.target }}
+        run: |
+          delays=(5 15 30 60)
+          for i in 1 2 3 4 5; do
+            if gh release view "$STAGING_TAG" --repo "$THIS_REPO" >/dev/null 2>&1; then
+              echo "暫存版本已存在：$STAGING_TAG"; exit 0
+            fi
+            if gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+              --title "暫存：${{ steps.chk.outputs.target }}" \
+              --notes "自動化暫存版本，處理完成後會搬移到 latest，不用手動理會" \
+              --prerelease; then
+              exit 0
+            fi
+            if [ "$i" -eq 5 ]; then echo "::error::建立暫存版本失敗（重試 5 次）"; exit 1; fi
+            echo "建立暫存版本第 ${i} 次失敗，${delays[$((i-1))]} 秒後重試..."
+            sleep "${delays[$((i-1))]}"
+          done
+
   # ── 同上邏輯，commit 線 ──
   check-commit:
     runs-on: ubuntu-latest
@@ -135,6 +157,14 @@ jobs:
       - id: chk
         run: |
           IN_PROGRESS=$(cat .state/in_progress_commit.txt 2>/dev/null || echo "")
+          # 上游 bot 每次執行都會 commit「Update Run Time」（只改 README 的時間），字型不一定有變。
+          # 所以 commit 線改看上游 pre 字型檔本身的指紋（ETag｜Last-Modified｜大小），有變才轉換。
+          # 用 HEAD 請求下載網址，不走 API，不吃額度。
+          pre_fp() {
+            timeout 30 curl -sSIL --max-time 30 "https://github.com/${UPSTREAM_REPO}/releases/download/pre/JetBrainsMapleMono-XX-XX-XX-XX.zip" \
+              | tr -d '\r' \
+              | awk -F': ' 'tolower($1)=="etag"{e=$2} tolower($1)=="last-modified"{m=$2} tolower($1)=="content-length"{l=$2} END{if(e!="")print e"|"m"|"l}'
+          }
           FORCE="${{ github.event_name == 'workflow_dispatch' && inputs.force == true }}"
           if [ -n "$IN_PROGRESS" ]; then
             echo "接續處理上次未完成的 commit：$IN_PROGRESS"
@@ -177,14 +207,49 @@ jobs:
               echo "updated=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            FP=""
+            delays=(5 15 30 60)
+            for i in 1 2 3 4 5; do
+              FP=$(pre_fp)
+              if [ -n "$FP" ]; then break; fi
+              [ "$i" -eq 5 ] && break
+              echo "查詢上游 pre 字型檔指紋第 ${i} 次失敗，${delays[$((i-1))]} 秒後重試..."
+              sleep "${delays[$((i-1))]}"
+            done
+            if [ -z "$FP" ]; then
+              echo "::warning::查詢上游 pre 字型檔指紋失敗（重試 5 次），本次跳過，等下次排程重試"
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             RECORDED=$(cat .state/last_commit.txt 2>/dev/null || echo "")
-            if [ "$LATEST" != "$RECORDED" ]; then
-              echo "偵測到新 commit：$LATEST（上次記錄：$RECORDED），鎖定處理"
+            RECORDED_FP=$(cat .state/last_pre_asset.txt 2>/dev/null || echo "")
+            echo "上游最新 commit：$LATEST（上次記錄：$RECORDED）"
+            echo "上游 pre 字型檔指紋：$FP（上次記錄：${RECORDED_FP:-無}）"
+            if [ -z "$RECORDED_FP" ]; then
+              # 第一次啟用指紋判斷：目前發佈的 pre 就是用這份上游字型轉的，只記錄、不重轉
+              echo "首次記錄上游 pre 字型檔指紋，不重新轉換"
               mkdir -p .state
-              echo "$LATEST" > .state/in_progress_commit.txt
+              echo "$FP" > .state/last_pre_asset.txt
               git config user.name "github-actions[bot]"
               git config user.email "github-actions[bot]@users.noreply.github.com"
-              git add .state/in_progress_commit.txt
+              git add .state/last_pre_asset.txt
+              git commit -m "記錄上游 pre 字型檔指紋（首次）"
+              for i in 1 2 3 4 5; do
+                git pull --rebase origin main -q && git push origin main && break
+                echo "推送衝突，重試中（第 $i 次）..."
+                sleep $((RANDOM % 5 + 1))
+              done
+              echo "target=" >> "$GITHUB_OUTPUT"
+              echo "updated=false" >> "$GITHUB_OUTPUT"
+            elif [ "$FP" != "$RECORDED_FP" ]; then
+              echo "上游 pre 字型檔有變，鎖定處理 commit：$LATEST"
+              mkdir -p .state
+              echo "$LATEST" > .state/in_progress_commit.txt
+              echo "$FP" > .state/in_progress_pre_asset.txt
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+              git add .state/in_progress_commit.txt .state/in_progress_pre_asset.txt
               git commit -m "鎖定處理 commit：$LATEST"
               for i in 1 2 3 4 5; do
                 git pull --rebase origin main -q && git push origin main && break
@@ -194,11 +259,33 @@ jobs:
               echo "target=$LATEST" >> "$GITHUB_OUTPUT"
               echo "updated=true" >> "$GITHUB_OUTPUT"
             else
-              echo "無新 commit"
+              echo "上游字型檔沒有變（新 commit 只是 README 的執行時間心跳），不轉換"
               echo "target=" >> "$GITHUB_OUTPUT"
               echo "updated=false" >> "$GITHUB_OUTPUT"
             fi
           fi
+
+      - name: 建立暫存版本（只在這裡建一次；16 個轉換工作同時建立會互搶，留下沒有 tag 的草稿）
+        if: steps.chk.outputs.updated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STAGING_TAG: staging-commit-${{ steps.chk.outputs.target }}
+        run: |
+          delays=(5 15 30 60)
+          for i in 1 2 3 4 5; do
+            if gh release view "$STAGING_TAG" --repo "$THIS_REPO" >/dev/null 2>&1; then
+              echo "暫存版本已存在：$STAGING_TAG"; exit 0
+            fi
+            if gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
+              --title "暫存（commit）：${{ steps.chk.outputs.target }}" \
+              --notes "自動化暫存版本，處理完成後會搬移到 pre，不用手動理會" \
+              --prerelease; then
+              exit 0
+            fi
+            if [ "$i" -eq 5 ]; then echo "::error::建立暫存版本失敗（重試 5 次）"; exit 1; fi
+            echo "建立暫存版本第 ${i} 次失敗，${delays[$((i-1))]} 秒後重試..."
+            sleep "${delays[$((i-1))]}"
+          done
 
   # ── release 線：16 組合並行，各自檢查暫存 tag 是否已完成、跳過已做過的 ──
   convert-release:
@@ -312,10 +399,6 @@ jobs:
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
 
           for i in 1 2 3; do
-            gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
-              --title "暫存：${{ needs.check-release.outputs.target }}" \
-              --notes "自動化暫存版本，處理完成後會搬移到 latest，不用手動理會" \
-              --prerelease 2>/dev/null || true
             if gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber; then
               break
             fi
@@ -407,6 +490,17 @@ jobs:
             echo "建立 latest release 第 ${i} 次失敗，${d} 秒後重試..."
             sleep "$d"
           done
+          # release 已存在時 create 不會改內容，標題與說明要另外更新，否則會一直停在第一次建立時的版本
+          NOW=$(TZ=Asia/Taipei date +'%Y-%m-%d %H:%M')
+          for i in 1 2 3 4 5; do
+            if gh release edit latest --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono ${{ needs.check-release.outputs.target }}" \
+              --notes "自動簡轉繁字型，來源版本：${{ needs.check-release.outputs.target }}（轉換完成：$NOW 台北時間）"; then
+              break
+            fi
+            if [ "$i" -eq 5 ]; then echo "::warning::更新 latest 標題與說明失敗（重試 5 次）"; break; fi
+            sleep "${delays[$((i-1))]}"
+          done
           for f in dist/*.zip; do
             attempt=1
             max_attempts=5
@@ -429,7 +523,11 @@ jobs:
         if: steps.count.outputs.n == '16'
         continue-on-error: true
         run: |
-          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag || true
+          # 舊版本同時建立暫存版本時留下的草稿（沒有 tag，用 tag 刪不到），用 release id 刪
+          for id in $(gh api "repos/$THIS_REPO/releases?per_page=100" --jq '.[] | select(.draft and (.tag_name | startswith("staging-"))) | .id'); do
+            gh api -X DELETE "repos/$THIS_REPO/releases/$id" && echo "已刪除殘留草稿 release $id"
+          done
       - name: 齊全，更新狀態記錄
         if: steps.count.outputs.n == '16'
         run: |
@@ -561,10 +659,6 @@ jobs:
           cd output_fonts && zip -q -r "../$ASSET_NAME" . && cd ..
 
           for i in 1 2 3; do
-            gh release create "$STAGING_TAG" --repo "$THIS_REPO" \
-              --title "暫存（commit）：${{ needs.check-commit.outputs.target }}" \
-              --notes "自動化暫存版本，處理完成後會搬移到 pre，不用手動理會" \
-              --prerelease 2>/dev/null || true
             if gh release upload "$STAGING_TAG" "$ASSET_NAME" --repo "$THIS_REPO" --clobber; then
               break
             fi
@@ -654,6 +748,17 @@ jobs:
             echo "建立 pre release 第 ${i} 次失敗，${d} 秒後重試..."
             sleep "$d"
           done
+          # release 已存在時 create 不會改內容，標題與說明要另外更新，否則會一直停在第一次建立時的版本
+          NOW=$(TZ=Asia/Taipei date +'%Y-%m-%d %H:%M')
+          for i in 1 2 3 4 5; do
+            if gh release edit pre --repo "$THIS_REPO" \
+              --title "TC-JetBrainsMapleMono pre (${{ needs.check-commit.outputs.target }})" \
+              --notes "自動簡轉繁字型（開發版），來源 commit：${{ needs.check-commit.outputs.target }}（轉換完成：$NOW 台北時間）"; then
+              break
+            fi
+            if [ "$i" -eq 5 ]; then echo "::warning::更新 pre 標題與說明失敗（重試 5 次）"; break; fi
+            sleep "${delays[$((i-1))]}"
+          done
           for f in dist/*.zip; do
             attempt=1
             max_attempts=5
@@ -676,17 +781,26 @@ jobs:
         if: steps.count.outputs.n == '16'
         continue-on-error: true
         run: |
-          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag
+          gh release delete "$STAGING_TAG" --repo "$THIS_REPO" --yes --cleanup-tag || true
+          # 舊版本同時建立暫存版本時留下的草稿（沒有 tag，用 tag 刪不到），用 release id 刪
+          for id in $(gh api "repos/$THIS_REPO/releases?per_page=100" --jq '.[] | select(.draft and (.tag_name | startswith("staging-"))) | .id'); do
+            gh api -X DELETE "repos/$THIS_REPO/releases/$id" && echo "已刪除殘留草稿 release $id"
+          done
       - name: 齊全，更新狀態記錄
         if: steps.count.outputs.n == '16'
         run: |
           mkdir -p .state
           echo "${{ needs.check-commit.outputs.target }}" > .state/last_commit.txt
           rm -f .state/in_progress_commit.txt
+          # 這次轉換用的上游字型檔指紋（強制模式沒有新指紋，就保留原本的記錄）
+          if [ -f .state/in_progress_pre_asset.txt ]; then
+            mv .state/in_progress_pre_asset.txt .state/last_pre_asset.txt
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .state/last_commit.txt
-          git rm -q -f --ignore-unmatch .state/in_progress_commit.txt
+          if [ -f .state/last_pre_asset.txt ]; then git add .state/last_pre_asset.txt; fi
+          git rm -q -f --ignore-unmatch .state/in_progress_commit.txt .state/in_progress_pre_asset.txt
           git commit -m "完成 commit：${{ needs.check-commit.outputs.target }}，發布至 pre"
           for i in 1 2 3 4 5; do
             git pull --rebase origin main -q && git push origin main && break
