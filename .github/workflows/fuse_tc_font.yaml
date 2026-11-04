@@ -139,6 +139,9 @@ jobs:
     outputs:
       updated: ${{ steps.chk.outputs.updated }}
       target: ${{ steps.chk.outputs.target }}
+      note: ${{ steps.chk.outputs.note }}
+      latest: ${{ steps.chk.outputs.latest }}
+      fpdate: ${{ steps.chk.outputs.fpdate }}
     steps:
       - uses: actions/checkout@v4
       - name: 同步至最新 main（同一次 run 內，checkout 預設仍是觸發當下的舊快照，不會反映其他 job 中途推送的 commit）
@@ -226,9 +229,14 @@ jobs:
             RECORDED_FP=$(cat .state/last_pre_asset.txt 2>/dev/null || echo "")
             echo "上游最新 commit：$LATEST（上次記錄：$RECORDED）"
             echo "上游 pre 字型檔指紋：$FP（上次記錄：${RECORDED_FP:-無}）"
+            # 給 RSS 用：上游最新 commit 與字型檔最後修改時間（台北時間）
+            echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+            FPDATE=$(TZ=Asia/Taipei date -d "$(echo "$FP" | cut -d'|' -f2)" +'%Y.%m.%d %H:%M' 2>/dev/null || echo "")
+            echo "fpdate=$FPDATE" >> "$GITHUB_OUTPUT"
             if [ -z "$RECORDED_FP" ]; then
               # 第一次啟用指紋判斷：目前發佈的 pre 就是用這份上游字型轉的，只記錄、不重轉
               echo "首次記錄上游 pre 字型檔指紋，不重新轉換"
+              echo "note=bootstrap" >> "$GITHUB_OUTPUT"
               mkdir -p .state
               echo "$FP" > .state/last_pre_asset.txt
               git config user.name "github-actions[bot]"
@@ -260,6 +268,7 @@ jobs:
               echo "updated=true" >> "$GITHUB_OUTPUT"
             else
               echo "上游字型檔沒有變（新 commit 只是 README 的執行時間心跳），不轉換"
+              [ "$LATEST" != "$RECORDED" ] && echo "note=heartbeat" >> "$GITHUB_OUTPUT"
               echo "target=" >> "$GITHUB_OUTPUT"
               echo "updated=false" >> "$GITHUB_OUTPUT"
             fi
@@ -833,6 +842,9 @@ jobs:
           C_CHECK: ${{ needs.check-commit.result }}
           C_UPDATED: ${{ needs.check-commit.outputs.updated }}
           C_TARGET: ${{ needs.check-commit.outputs.target }}
+          C_NOTE: ${{ needs.check-commit.outputs.note }}
+          C_LATEST: ${{ needs.check-commit.outputs.latest }}
+          C_FPDATE: ${{ needs.check-commit.outputs.fpdate }}
         run: |
           set -u
           for i in 1 2 3; do timeout 30 git pull -q origin main && break; sleep 5; done
@@ -878,7 +890,13 @@ jobs:
             DESC="【摘要】上游有新版，已轉換完成並發布"$'\n'"${LINES%$'\n'}"
           else
             TITLE="🟢 ${T_HM} ${T_DATE}｜上游無更新"
-            DESC="【摘要】上游 Fusion-JetBrainsMapleMono 沒有新 release／commit"$'\n'"【目前版本】release $(cat .state/last_release.txt 2>/dev/null)／commit $(cat .state/last_commit.txt 2>/dev/null)"
+            # commit 線分三種：真的沒新 commit／有新 commit 但只是上游 README 的執行時間心跳／首次記錄字型檔狀態
+            case "${C_NOTE:-}" in
+              heartbeat) C_MSG="上游有新 commit（${C_LATEST}），但只是 README 的執行時間，字型檔沒變（最後更新 ${C_FPDATE:-?}），不轉換" ;;
+              bootstrap) C_MSG="首次記錄上游字型檔狀態（最後更新 ${C_FPDATE:-?}），不轉換" ;;
+              *) C_MSG="上游沒有新 commit" ;;
+            esac
+            DESC="【摘要】上游字型沒有更新"$'\n'"【release】上游沒有新 release"$'\n'"【commit】${C_MSG}"$'\n'"【目前版本】release $(cat .state/last_release.txt 2>/dev/null)／commit $(cat .state/last_commit.txt 2>/dev/null)"
           fi
           echo "$TITLE"; echo "$DESC"
 
