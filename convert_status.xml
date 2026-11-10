@@ -3,6 +3,10 @@
 <title>TC-JetBrainsMapleMono 轉換狀態</title>
 <description>每日檢查上游 Fusion-JetBrainsMapleMono 並自動轉換簡轉繁字型的執行紀錄</description>
 <link>https://github.com/bgtsai/TC-JetBrainsMapleMono</link>
+<item><title>🟢 04:09 2026.11.11｜上游無更新</title><description><![CDATA[【摘要】上游字型沒有更新<br>
+【release】上游沒有新 release<br>
+【commit】上游有新 commit（083c15d），但只是 README 的執行時間，字型檔沒變（最後更新 2026.11.09 21:18），不轉換<br>
+【目前版本】release 1.2304.79／commit 3050b46]]></description><pubDate>Tue, 10 Nov 2026 20:10:02 +0000</pubDate><guid isPermaLink="false">tc-jbmm-42892506842-1</guid></item>
 <item><title>🔵 06:49 2026.11.10｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
 【commit】1e0ccb2 → 3050b46（16/16 已發布）]]></description><pubDate>Mon, 09 Nov 2026 23:01:36 +0000</pubDate><guid isPermaLink="false">tc-jbmm-42715335076-1</guid></item>
 <item><title>🟢 02:11 2026.11.09｜上游無更新</title><description><![CDATA[【摘要】上游字型沒有更新<br>
@@ -53,6 +57,4 @@
 【commit】de51106 → 321cc89（16/16 已發布）]]></description><pubDate>Sun, 25 Oct 2026 17:06:55 +0000</pubDate><guid isPermaLink="false">tc-jbmm-40214024946-1</guid></item>
 <item><title>🔵 00:24 2026.10.25｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
 【commit】8c8aecb → de51106（16/16 已發布）]]></description><pubDate>Sat, 24 Oct 2026 16:34:30 +0000</pubDate><guid isPermaLink="false">tc-jbmm-40111388579-1</guid></item>
-<item><title>🔵 01:38 2026.10.24｜已轉換發布</title><description><![CDATA[【摘要】上游有新版，已轉換完成並發布<br>
-【commit】0e43be8 → 8c8aecb（16/16 已發布）]]></description><pubDate>Fri, 23 Oct 2026 17:50:30 +0000</pubDate><guid isPermaLink="false">tc-jbmm-39996792221-1</guid></item>
 </channel></rss>
